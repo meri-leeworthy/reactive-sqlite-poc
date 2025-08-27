@@ -59,7 +59,7 @@ export class WorkerManager {
       case "shared": {
         this.sharedWorker = new SharedWorker(
           new URL("../../workers/shared-worker.ts", import.meta.url),
-          { type: "module" },
+          { type: "module", name: "roomy-shared-worker" },
         );
         this.sharedWorker.port.onmessage = (e) =>
           this.dispatch(e.data as FromWorker);
@@ -68,7 +68,7 @@ export class WorkerManager {
       case "dedicated": {
         this.dedicatedWorker = new Worker(
           new URL("../../workers/dedicated-worker.ts", import.meta.url),
-          { type: "module" },
+          { type: "module", name: "roomy-dedicated-worker" },
         );
         this.dedicatedWorker.onmessage = (e) =>
           this.dispatch(e.data as FromWorker);
