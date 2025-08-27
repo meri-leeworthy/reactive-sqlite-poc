@@ -18,13 +18,5 @@ export default defineConfig({
     target: "es2022",
     chunkSizeWarningLimit: 2048,
     sourcemap: true,
-    rollupOptions: {
-      input: {
-        app: "src/app.html",
-        // "service-worker": "src/workers/service-worker.ts",
-        "shared-worker": "src/workers/shared-worker.ts",
-        "dedicated-worker": "src/workers/dedicated-worker.ts",
-      },
-    },
   },
 });
