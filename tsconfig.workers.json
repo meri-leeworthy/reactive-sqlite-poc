@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["esnext", "WebWorker", "DOM", "DOM.Iterable", "ESNext"],
+    "isolatedModules": true,
+    "types": ["vite/client"]
+  },
+  "include": ["src/workers/**/*.ts", "src/service-worker.ts"]
+}
