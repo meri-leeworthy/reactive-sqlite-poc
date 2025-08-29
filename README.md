@@ -285,3 +285,89 @@ If you want, I’ll:
 * sketch projection logic in TypeScript for a browser projection worker that applies events into SQLite transactionally.
 
 Which of those is more useful next?
+
+## SharedWorker coordinator (design, setup, and testing)
+
+This project includes a minimal but production-leaning SharedWorker coordinator that ensures only one tab is active for database work, forwards queries from any tab to the active tab, and fails over when the active tab closes.
+
+- **Coordinator**: `src/workers/shared-worker.ts`
+- **Per-tab worker (mock DB)**: `src/workers/dedicated-worker.ts`
+- **Main-thread wrapper**: `src/lib/workers/WorkerManager.ts`
+- **Message contracts**: `src/lib/workers/messages.ts`
+- **Integration tests**: `tests/sharedworker.spec.ts`
+
+### How it works
+
+- **Environment detection**
+  - `WorkerManager` chooses `SharedWorker` when available and initialises one per-origin coordinator.
+- **Registration & promotion**
+  - Each page registers with the SharedWorker: `{ type: 'REGISTER_TAB', tabId }`.
+  - If no active tab exists, the SharedWorker promotes one by sending `{ type: 'PROMOTE_TO_ACTIVE', tabId }` to that page.
+  - The page forwards this to its per-tab Dedicated Worker which simulates opening the DB and replies `{ type: 'DB_OPENED', tabId }` back via the page to the SharedWorker.
+- **Query routing**
+  - Any tab sends `QUERY { tabId, requestId, sql }` to the SharedWorker.
+  - The SharedWorker forwards `FORWARD_QUERY` to the active tab's page, which forwards it to that tab's Dedicated Worker.
+  - The Dedicated Worker responds with `QUERY_RESULT { requestId, fromTabId, result }`.
+  - The SharedWorker translates that into `{ type: 'QUERY_RESPONSE', requestId, result }` and posts it back to the origin tab.
+- **Failover**
+  - If the active tab is closed, the SharedWorker elects another connected tab and promotes it.
+  - Pending queries retry with exponential backoff until an active, healthy tab is available.
+
+### Test hooks (for Playwright and manual inspection)
+
+To make integration tests deterministic, the app exposes a few globals after the app mounts (see `src/routes/+layout.svelte`):
+
+- `window.__TAB_ID`: the current page's tab identifier (UUID)
+- `window.__ACTIVE`: the coordinator's current active tab id (or `null`)
+- `window.__sendQuery(sql, requestId)`: runs a query and resolves with `{ type: 'QUERY_RESPONSE', requestId, result }`
+
+Example (in tests):
+
+```ts
+const res = await page.evaluate(
+  ([sql, requestId]) => window.__sendQuery(sql, requestId),
+  ["SELECT 1", "q1"]
+);
+// res.type === 'QUERY_RESPONSE'
+```
+
+### Running and testing
+
+- Dev server: `pnpm dev` (SvelteKit on `http://127.0.0.1:5173`)
+- Tests: `pnpm test` (Playwright starts/reuses the dev server per `playwright.config.ts`)
+
+Notes:
+- The Playwright config sets `reuseExistingServer: true`. If you already have a dev server on `127.0.0.1:5173`, tests will reuse it.
+- If the port is in use by another project, either stop that server or change one of the ports.
+
+### File overview
+
+- `src/lib/workers/WorkerManager.ts`
+  - Creates the SharedWorker and a per-tab Dedicated Worker
+  - Forwards messages between SharedWorker and Dedicated Worker
+  - Provides a small subscription API and `sendQuery(sql, requestId)`
+- `src/workers/shared-worker.ts`
+  - Tracks connected tabs, elects an active tab, forwards queries, handles retries
+  - Translates `QUERY_RESULT` (from Dedicated Worker) into `QUERY_RESPONSE` (to page)
+- `src/workers/dedicated-worker.ts`
+  - Mock of DB worker for tests: opens on promotion and echoes queries after a short delay
+- `tests/sharedworker.spec.ts`
+  - Verifies page bootstrap, message flow, single-tab query, multi-tab forwarding, and failover
+
+### Troubleshooting
+
+- "Port 5173 is already in use"
+  - Stop any other Vite dev server, or change the port in either project. Playwright will attempt to reuse an existing server if compatible.
+- Tests hang awaiting `__sendQuery`
+  - Ensure the page fully mounted (tests wait for `__TAB_ID` before issuing queries).
+  - Check devtools logs: the app logs `ACTIVE_CHANGED`, `PROMOTE_TO_ACTIVE`, and query routing steps.
+- SharedWorker not supported
+  - `WorkerManager` detects environment; if you need a non-SharedWorker fallback, extend it to use a dedicated worker-only mode.
+
+### Extending to a real SQLite worker later
+
+Replace the mock logic in `src/workers/dedicated-worker.ts` with your WASM SQLite integration. Keep the wire protocol the same:
+
+- On promotion, open the OPFS connection and emit `DB_OPENED`.
+- On `FORWARD_QUERY`, execute and respond with `QUERY_RESULT { requestId, fromTabId, result }` (or `QUERY_ERROR`).
+- The SharedWorker will keep translating results into `QUERY_RESPONSE` for pages and handle failover.
