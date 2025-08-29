@@ -1,18 +1,26 @@
-import type { ToWorker, FromWorker } from "./messages";
+import type {
+  ToSharedWorker,
+  FromSharedWorker,
+  PromoteToActive,
+  ForwardQuery,
+  QueryResponse,
+  QueryError,
+} from "./messages";
 
-export type WorkerKind = "shared" | "dedicated" | "none";
+export type WorkerKind = "shared" | "none";
 
-type Listener = (msg: FromWorker) => void;
+type Listener = (msg: FromSharedWorker) => void;
 
 export class WorkerManager {
   private isInitialized = false;
   private workerKind: WorkerKind = "none";
 
-  private serviceWorkerReg: ServiceWorkerRegistration | null = null;
   private sharedWorker: SharedWorker | null = null;
   private dedicatedWorker: Worker | null = null;
 
   private listeners = new Set<Listener>();
+
+  private tabId: string = crypto.randomUUID();
 
   constructor() {
     this.detectEnvironment();
@@ -21,8 +29,6 @@ export class WorkerManager {
   private detectEnvironment(): void {
     if (typeof SharedWorker !== "undefined") {
       this.workerKind = "shared";
-    } else if (typeof Worker !== "undefined") {
-      this.workerKind = "dedicated";
     } else {
       this.workerKind = "none";
     }
@@ -31,66 +37,78 @@ export class WorkerManager {
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
 
-    await this.registerServiceWorker();
-    this.initializeAppWorker();
+    if (this.workerKind === "shared") {
+      this.sharedWorker = new SharedWorker(
+        new URL("../../workers/shared-worker.ts", import.meta.url),
+        { type: "module", name: "coordinator-shared-worker" },
+      );
+      this.sharedWorker.port.onmessage = (e) =>
+        this.dispatch(e.data as FromSharedWorker);
+      this.sharedWorker.port.start();
+
+      // Start dedicated worker per tab
+      this.dedicatedWorker = new Worker(
+        new URL("../../workers/dedicated-worker.ts", import.meta.url),
+        { type: "module", name: "tab-dedicated-worker" },
+      );
+      this.dedicatedWorker.onmessage = (e) => {
+        const m = e.data as
+          | PromoteToActive
+          | QueryResponse
+          | QueryError
+          | { type: string };
+        // Forward everything from dedicated to shared
+        this.sharedWorker!.port.postMessage(m);
+      };
+
+      // Register this tab with shared worker
+      this.sharedWorker.port.postMessage({
+        type: "REGISTER_TAB",
+        tabId: this.tabId,
+      } satisfies ToSharedWorker);
+
+      // Initialize dedicated worker with tabId
+      this.dedicatedWorker.postMessage({ type: "INIT", tabId: this.tabId });
+
+      // Cleanup on unload
+      addEventListener("beforeunload", () => {
+        try {
+          this.sharedWorker?.port.postMessage({
+            type: "UNREGISTER_TAB",
+            tabId: this.tabId,
+          });
+        } catch {
+          /* noop */
+        }
+      });
+    }
 
     this.isInitialized = true;
   }
 
-  private async registerServiceWorker(): Promise<void> {
-    // if ("serviceWorker" in navigator) {
-    //   try {
-    //     const reg = await navigator.serviceWorker.register(
-    //       "/service-worker.js?worker&url",
-    //       {
-    //         scope: "/",
-    //         type: "module",
-    //       },
-    //     );
-    //     console.log("Service worker registered", reg);
-    //   } catch (err) {
-    //     console.error("SW registration failed", err);
-    //   }
-    // }
-  }
-
-  private initializeAppWorker(): void {
-    switch (this.workerKind) {
-      case "shared": {
-        this.sharedWorker = new SharedWorker(
-          new URL("../../workers/shared-worker.ts", import.meta.url),
-          { type: "module", name: "roomy-shared-worker" },
-        );
-        this.sharedWorker.port.onmessage = (e) =>
-          this.dispatch(e.data as FromWorker);
-        break;
-      }
-      case "dedicated": {
-        this.dedicatedWorker = new Worker(
-          new URL("../../workers/dedicated-worker.ts", import.meta.url),
-          { type: "module", name: "roomy-dedicated-worker" },
-        );
-        this.dedicatedWorker.onmessage = (e) =>
-          this.dispatch(e.data as FromWorker);
-        break;
-      }
-      case "none":
-        console.warn("WorkerManager: No worker support available");
+  private dispatch(msg: FromSharedWorker) {
+    // If coordinator asks to promote, forward to dedicated worker
+    if ((msg as PromoteToActive).type === "PROMOTE_TO_ACTIVE") {
+      this.dedicatedWorker?.postMessage(msg);
     }
-  }
-
-  private dispatch(msg: FromWorker) {
+    // If coordinator forwards a query to active, pass to dedicated
+    if ((msg as ForwardQuery).type === "FORWARD_QUERY") {
+      this.dedicatedWorker?.postMessage(msg);
+    }
     for (const l of this.listeners) l(msg);
   }
 
-  send(msg: ToWorker): void {
-    if (this.sharedWorker) {
-      this.sharedWorker.port.postMessage(msg);
-    } else if (this.dedicatedWorker) {
-      this.dedicatedWorker.postMessage(msg);
-    } else {
-      console.warn("WorkerManager: No worker available to send message", msg);
+  sendQuery(sql: string, requestId: string): void {
+    if (!this.sharedWorker) {
+      console.warn("WorkerManager: SharedWorker not available");
+      return;
     }
+    this.sharedWorker.port.postMessage({
+      type: "QUERY",
+      tabId: this.tabId,
+      requestId,
+      sql,
+    } as ToSharedWorker);
   }
 
   subscribe(listener: Listener): () => void {
@@ -112,5 +130,9 @@ export class WorkerManager {
       this.sharedWorker = null;
     }
     this.isInitialized = false;
+  }
+
+  getTabId(): string {
+    return this.tabId;
   }
 }

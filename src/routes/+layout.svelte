@@ -12,13 +12,36 @@
       wm = new WorkerManager();
       await wm.initialize();
 
+      // Expose minimal test helpers akin to sw-coordinator-test harness
+      (
+        window as unknown as {
+          __sendQuery: (sql: string, requestId: string) => Promise<unknown>;
+        }
+      ).__sendQuery = (sql: string, requestId: string) => {
+        return new Promise((resolve) => {
+          const unsub = wm.subscribe((m) => {
+            if (
+              m.type === "QUERY_RESPONSE" &&
+              (m as unknown as { requestId?: string }).requestId === requestId
+            ) {
+              unsub();
+              resolve(m);
+            }
+          });
+          wm.sendQuery(sql, requestId);
+        });
+      };
+      (window as unknown as { __TAB_ID: string }).__TAB_ID = wm.getTabId();
+
       wm.subscribe((msg) => {
-        if (msg.type === "RESULT") {
-          console.log("Worker result:", msg.payload.output);
+        if (msg.type === "ACTIVE_CHANGED") {
+          (window as unknown as { __ACTIVE: string | null }).__ACTIVE = (
+            msg as unknown as { activeTabId: string | null }
+          ).activeTabId;
+          window.postMessage(msg, "*");
         }
       });
 
-      wm.send({ type: "COMPUTE", payload: { input: 21 } });
       console.log("App: WorkerManager initialized successfully");
     } catch (error) {
       console.error("App: Failed to initialize WorkerManager:", error);
