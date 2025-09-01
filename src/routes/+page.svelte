@@ -1,47 +1,29 @@
 <script lang="ts">
+  import { LeafClient } from "$lib/workers/client";
   import { onMount } from "svelte";
-  let active: string | null = null;
-  let tabId: string | null = null;
+
   let sql = "SELECT datetime('now') as now;";
   let output: string = "";
 
-  function genId() {
-    return Math.random().toString(36).slice(2);
-  }
+  const client = new LeafClient();
 
   async function run() {
     output = "Running...";
-    const id = genId();
-    try {
-      // @ts-ignore
-      const res = await window.__sendQuery(sql, id);
-      output = JSON.stringify(res, null, 2);
-    } catch (e) {
-      output = String(e);
-    }
+    // output = await client.run(sql);
+    output = await client.initSchema();
   }
 
   onMount(() => {
-    // @ts-ignore
-    tabId = window.__TAB_ID || null;
-    // @ts-ignore
-    active = window.__ACTIVE || null;
-    const handler = (e: MessageEvent) => {
-      if (e?.data?.type === "ACTIVE_CHANGED") {
-        // @ts-ignore
-        active = e.data.activeTabId;
-      }
-    };
-    window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
+    client.onMount();
+    return () => client.onUnMount;
   });
 </script>
 
 <div class="p-6 space-y-4">
   <h1 class="text-2xl font-semibold">Reactive SQLite Demo</h1>
   <div class="text-sm text-gray-600">
-    <div>Tab ID: {tabId}</div>
-    <div>Active Tab: {active ?? "(none)"}</div>
+    <div>Tab ID: {client.tabId}</div>
+    <div>Active Tab: {client.active ?? "(none)"}</div>
   </div>
 
   <div class="space-y-2">
@@ -50,9 +32,9 @@
       id="sql"
       bind:value={sql}
       rows={4}
-      class="w-full p-2 border rounded"
+      class="p-2 w-full rounded border"
     ></textarea>
-    <button on:click={run} class="px-3 py-1.5 bg-black text-white rounded"
+    <button on:click={run} class="px-3 py-1.5 text-white bg-black rounded"
       >Run</button
     >
   </div>
@@ -61,6 +43,6 @@
     <label for="result" class="block text-sm font-medium">Result</label>
     <pre
       id="result"
-      class="p-3 bg-gray-100 rounded overflow-auto text-xs">{output}</pre>
+      class="overflow-auto p-3 text-xs bg-gray-100 rounded">{output}</pre>
   </div>
 </div>

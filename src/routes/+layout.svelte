@@ -12,7 +12,6 @@
       wm = new WorkerManager();
       await wm.initialize();
 
-      // Expose minimal test helpers akin to sw-coordinator-test harness
       (
         window as unknown as {
           __sendQuery: (sql: string, requestId: string) => Promise<unknown>;

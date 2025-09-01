@@ -87,7 +87,9 @@ Notes:
   - Tracks connected tabs, elects an active tab, forwards queries, handles retries
   - Translates `QUERY_RESULT` (from Dedicated Worker) into `QUERY_RESPONSE` (to page)
 - `src/workers/dedicated-worker.ts`
-  - Mock of DB worker for tests: opens on promotion and echoes queries after a short delay
+  - DB worker: opens on promotion and handles queries
+- `src/workers/worker-logic.ts`
+  - Handles the actual SQLite operations
 - `tests/sharedworker.spec.ts`
   - Verifies page bootstrap, message flow, single-tab query, multi-tab forwarding, and failover
 
