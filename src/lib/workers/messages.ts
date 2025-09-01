@@ -12,6 +12,10 @@ export type Heartbeat = { type: "HEARTBEAT" };
 export type HeartbeatPong = { type: "HEARTBEAT_PONG"; tabId: string };
 export type DbOpened = { type: "DB_OPENED"; tabId: string };
 
+// Web Locks liveness notifications (from page to SharedWorker)
+export type LockHeld = { type: "LOCK_HELD"; tabId: string };
+export type LockReleased = { type: "LOCK_RELEASED"; tabId: string };
+
 export type Query = {
   type: "QUERY";
   tabId: string;
@@ -46,6 +50,8 @@ export type ToSharedWorker =
   | UnregisterTab
   | Query
   | HeartbeatPong
+  | LockHeld
+  | LockReleased
   | BaseMsg;
 export type FromSharedWorker =
   | ActiveChanged

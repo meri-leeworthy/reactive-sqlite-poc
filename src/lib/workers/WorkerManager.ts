@@ -5,6 +5,8 @@ import type {
   ForwardQuery,
   QueryResponse,
   QueryError,
+  Heartbeat,
+  HeartbeatPong,
 } from "./messages";
 
 export type WorkerKind = "shared" | "none";
@@ -21,6 +23,10 @@ export class WorkerManager {
   private listeners = new Set<Listener>();
 
   private tabId: string = crypto.randomUUID();
+
+  // Web Locks state
+  private lockRelease: (() => void) | null = null;
+  private lockHeld = false;
 
   constructor() {
     this.detectEnvironment();
@@ -77,9 +83,16 @@ export class WorkerManager {
             type: "UNREGISTER_TAB",
             tabId: this.tabId,
           });
+          // Release the lock to proactively notify LOCK_RELEASED
+          this.lockRelease?.();
         } catch {
           /* noop */
         }
+      });
+
+      // Acquire long-held Web Lock for liveness (best-effort)
+      this.acquireWebLock().catch(() => {
+        /* ignore */
       });
     }
 
@@ -94,6 +107,13 @@ export class WorkerManager {
     // If coordinator forwards a query to active, pass to dedicated
     if ((msg as ForwardQuery).type === "FORWARD_QUERY") {
       this.dedicatedWorker?.postMessage(msg);
+    }
+    // Reply to heartbeat from coordinator
+    if ((msg as Heartbeat).type === "HEARTBEAT") {
+      this.sharedWorker?.port.postMessage({
+        type: "HEARTBEAT_PONG",
+        tabId: this.tabId,
+      } as HeartbeatPong as ToSharedWorker);
     }
     for (const l of this.listeners) l(msg);
   }
@@ -134,5 +154,47 @@ export class WorkerManager {
 
   getTabId(): string {
     return this.tabId;
+  }
+
+  private async acquireWebLock(): Promise<void> {
+    // Feature-detect Web Locks
+    const locksApi = navigator;
+    if (!locksApi.locks || typeof locksApi.locks.request !== "function") {
+      return;
+    }
+    const lockName = `reactive-sqlite-liveness:${this.tabId}`;
+    // Hold the lock until explicitly released (or page closes)
+    await locksApi.locks
+      .request(lockName, { mode: "exclusive" }, async () => {
+        // Notify coordinator
+        this.lockHeld = true;
+        try {
+          this.sharedWorker?.port.postMessage({
+            type: "LOCK_HELD",
+            tabId: this.tabId,
+          } as ToSharedWorker);
+        } catch {
+          /* noop */
+        }
+
+        // Keep lock forever until release is called
+        await new Promise<void>((resolve) => {
+          this.lockRelease = resolve;
+        });
+      })
+      .finally(() => {
+        if (this.lockHeld) {
+          try {
+            this.sharedWorker?.port.postMessage({
+              type: "LOCK_RELEASED",
+              tabId: this.tabId,
+            } as ToSharedWorker);
+          } catch {
+            /* noop */
+          }
+        }
+        this.lockHeld = false;
+        this.lockRelease = null;
+      });
   }
 }
