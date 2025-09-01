@@ -20,10 +20,9 @@
       ).__sendQuery = (sql: string, requestId: string) => {
         return new Promise((resolve) => {
           const unsub = wm.subscribe((m) => {
-            if (
-              m.type === "QUERY_RESPONSE" &&
-              (m as unknown as { requestId?: string }).requestId === requestId
-            ) {
+            const rid = (m as unknown as { requestId?: string }).requestId;
+            if (rid !== requestId) return;
+            if (m.type === "QUERY_RESPONSE" || m.type === "QUERY_ERROR") {
               unsub();
               resolve(m);
             }

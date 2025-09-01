@@ -107,28 +107,29 @@ test.describe("SQLite integration (SharedWorker coordinator)", () => {
   test("failover: closing active tab promotes another tab and DB data remains accessible", async ({
     browser,
   }) => {
-    // open two contexts (separate tabs simulated)
-    const ctxA = await browser.newContext();
-    const ctxB = await browser.newContext();
-    const pageA = await ctxA.newPage();
-    const pageB = await ctxB.newPage();
+    // Use a single browser context with two pages to share SharedWorker and OPFS
+    const context = await browser.newContext();
+    const pageA = await context.newPage();
+    const pageB = await context.newPage();
 
     await openTab(pageA);
     await openTab(pageB);
 
     // Ensure active tab (whatever that is) can insert a sentinel row
-    await pageA.evaluate(() =>
+    const fCreate = (await pageA.evaluate(() =>
       window.__sendQuery(
         "CREATE TABLE IF NOT EXISTS f(a INTEGER PRIMARY KEY, b TEXT);",
         "f-create",
       ),
-    );
-    await pageA.evaluate(() =>
+    )) as { type?: string };
+    expect(fCreate && fCreate.type !== "QUERY_ERROR").toBeTruthy();
+    const fInsert = (await pageA.evaluate(() =>
       window.__sendQuery("INSERT INTO f(b) VALUES('sentinel');", "f-insert"),
-    );
+    )) as { type?: string };
+    expect(fInsert && fInsert.type !== "QUERY_ERROR").toBeTruthy();
 
-    // Close ctxA to trigger promotion
-    await ctxA.close();
+    // Close pageA to trigger promotion
+    await pageA.close();
 
     // Give coordinator time to promote
     await pageB
@@ -148,7 +149,7 @@ test.describe("SQLite integration (SharedWorker coordinator)", () => {
     const rows = selectRes?.result?.rows ?? selectRes?.result ?? selectRes;
     expect(JSON.stringify(rows)).toContain("sentinel");
 
-    await ctxB.close();
+    await context.close();
   });
 
   test("concurrent queries from multiple tabs are routed and responses return correct requestId", async ({

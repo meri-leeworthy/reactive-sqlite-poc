@@ -48,20 +48,48 @@ export async function initializeDatabase(
     try {
       // Prefer OPFS SAH Pool VFS. It avoids COOP/COEP and works across modern browsers.
       if (sqlite3?.installOpfsSAHPoolVfs) {
-        const pool = await sqlite3.installOpfsSAHPoolVfs({
-          name: "opfs-sahpool",
-          directory: "/reactive-sqlite",
-        });
-        db = new pool.OpfsSAHPoolDb(dbName);
+        let lastErr: unknown = null;
+        // Retry a few times because SAH Pool can transiently fail during context handoff
+        for (let attempt = 0; attempt < 6; attempt++) {
+          try {
+            const pool = await sqlite3.installOpfsSAHPoolVfs({
+              name: "opfs-sahpool",
+              directory: "/reactive-sqlite",
+              forceReinitIfPreviouslyFailed: true,
+            });
+            db = new pool.OpfsSAHPoolDb(dbName);
+            break;
+          } catch (e) {
+            lastErr = e;
+            await new Promise((r) => setTimeout(r, 50 * Math.pow(2, attempt)));
+          }
+        }
+        if (!db) throw lastErr ?? new Error("sahpool_init_failed");
       } else if (sqlite3?.oo1?.OpfsDb) {
         // Fallback to OPFS vfs if available (requires COOP/COEP)
         db = new sqlite3.oo1.OpfsDb(dbName);
       } else {
         // Last resort: non-OPFS DB (likely memory-backed)
+        // In tests we want to fail hard if persistence is not available to avoid
+        // silently using memory DB. Detect Playwright by userAgent if possible.
+        const ua = (self as unknown as { navigator?: { userAgent?: string } })
+          ?.navigator?.userAgent;
+        const isPlaywright =
+          typeof ua === "string" && ua.includes("HeadlessChrome");
+        if (isPlaywright) {
+          throw new Error("persistent_vfs_unavailable");
+        }
         db = new sqlite3.oo1.DB(dbName);
       }
     } catch {
-      db = new sqlite3.oo1.DB(dbName);
+      // If SAH Pool API exists but initialization failed, do not silently fall back
+      // to memory, as that would break cross-tab persistence. Only fall back if
+      // neither SAH Pool nor OpfsDb are usable.
+      if (sqlite3?.installOpfsSAHPoolVfs || sqlite3?.oo1?.OpfsDb) {
+        throw new Error("persistent_vfs_unavailable");
+      } else {
+        db = new sqlite3.oo1.DB(dbName);
+      }
     }
   })();
   await initPromise;

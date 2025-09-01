@@ -97,10 +97,20 @@ ctx.onmessage = (e: MessageEvent<InboundMessage>) => {
         })
         .catch((err) => {
           // If init fails, pending queries will error when attempted later
+          const message = err instanceof Error ? err.message : String(err);
+          while (pending.length) {
+            const p = pending.shift()!;
+            ctx.postMessage({
+              type: "QUERY_ERROR",
+              requestId: p.requestId,
+              fromTabId: p.fromTabId,
+              error: message,
+            } as QueryError);
+          }
           ctx.postMessage({
             type: "QUERY_ERROR",
             requestId: "__init__",
-            error: String(err),
+            error: message,
           } as QueryError);
         });
     }
