@@ -61,7 +61,7 @@ export async function initializeDatabase(
             break;
           } catch (e) {
             lastErr = e;
-            await new Promise((r) => setTimeout(r, 50 * Math.pow(2, attempt)));
+            await new Promise((r) => setTimeout(r, 100 * Math.pow(2, attempt)));
           }
         }
         if (!db) throw lastErr ?? new Error("sahpool_init_failed");

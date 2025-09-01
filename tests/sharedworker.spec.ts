@@ -195,4 +195,56 @@ test.describe("SharedWorker coordinator", () => {
     expect((res as { type: string }).type).toBe("QUERY_RESPONSE");
     expect((res as { requestId: string }).requestId).toBe(requestId);
   });
+
+  test("regression guard: newly promoted tab immediate query should succeed", async ({
+    browser,
+  }) => {
+    // Use a single context with two pages to share the SharedWorker and simulate true multi-tab
+    const context = await browser.newContext();
+    const pageA = await context.newPage();
+    const pageB = await context.newPage();
+    await openTab(pageA);
+    await openTab(pageB);
+
+    // Ensure pageB is the active tab
+    await pageB.waitForFunction(() => window.__ACTIVE === window.__TAB_ID, {
+      timeout: 10_000,
+    });
+
+    const res = (await pageB.evaluate(() =>
+      window.__sendQuery("SELECT 1", "new-tab-immediate"),
+    )) as { type: string; error?: string };
+
+    // Guard: this should succeed. If it errors with max_retries_exhausted, fail the test.
+    expect(res.type).toBe("QUERY_RESPONSE");
+    expect(res.error || "").not.toContain("max_retries_exhausted");
+
+    await context.close();
+  });
+
+  test("workaround: previous active tab query then new tab query should succeed", async ({
+    browser,
+  }) => {
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    const pageA = await ctxA.newPage();
+    const pageB = await ctxB.newPage();
+    await openTab(pageA);
+    await openTab(pageB);
+
+    // At this point B is typically active; run a query on A to re-activate it
+    const rA = (await pageA.evaluate(() =>
+      window.__sendQuery("SELECT 1", "reactivate-a"),
+    )) as { type: string };
+    expect(rA.type === "QUERY_RESPONSE").toBeTruthy();
+
+    // Now try from B again; in the observed behavior this succeeds after A has been active
+    const rB = (await pageB.evaluate(() =>
+      window.__sendQuery("SELECT 1", "after-a"),
+    )) as { type: string };
+    expect(rB.type === "QUERY_RESPONSE").toBeTruthy();
+
+    await ctxA.close();
+    await ctxB.close();
+  });
 });

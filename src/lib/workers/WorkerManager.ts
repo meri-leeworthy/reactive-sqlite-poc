@@ -102,7 +102,39 @@ export class WorkerManager {
   private dispatch(msg: FromSharedWorker) {
     // If coordinator asks to promote, forward to dedicated worker
     if ((msg as PromoteToActive).type === "PROMOTE_TO_ACTIVE") {
-      this.dedicatedWorker?.postMessage(msg);
+      // Recreate dedicated worker if it was terminated on demotion
+      if (!this.dedicatedWorker) {
+        this.dedicatedWorker = new Worker(
+          new URL("../../workers/dedicated-worker.ts", import.meta.url),
+          { type: "module", name: "tab-dedicated-worker" },
+        );
+        this.dedicatedWorker.onmessage = (e) => {
+          const m = e.data as
+            | PromoteToActive
+            | QueryResponse
+            | QueryError
+            | { type: string };
+          this.sharedWorker!.port.postMessage(m);
+        };
+        this.dedicatedWorker.postMessage({ type: "INIT", tabId: this.tabId });
+      }
+      this.dedicatedWorker.postMessage(msg);
+    }
+    // Demote signal can be used later to pause work, if needed
+    if ((msg as { type?: string }).type === "DEMOTE") {
+      // Terminate dedicated worker to release any VFS and ensure only one holder
+      if (this.dedicatedWorker) {
+        try {
+          this.dedicatedWorker.terminate();
+        } catch (e) {
+          console.warn(
+            "WorkerManager: failed to terminate dedicated worker",
+            e,
+          );
+        } finally {
+          this.dedicatedWorker = null;
+        }
+      }
     }
     // If coordinator forwards a query to active, pass to dedicated
     if ((msg as ForwardQuery).type === "FORWARD_QUERY") {

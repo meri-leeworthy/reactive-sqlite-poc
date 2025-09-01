@@ -22,7 +22,7 @@ It's worth noting that Sveltekit only bundles Service Workers in production, and
 This project includes a minimal but production-leaning SharedWorker coordinator that ensures only one tab is active for database work, forwards queries from any tab to the active tab, and fails over when the active tab closes.
 
 - **Coordinator**: `src/workers/shared-worker.ts`
-- **Per-tab worker (mock DB)**: `src/workers/dedicated-worker.ts`
+- **Per-tab worker (SQLite + OPFS SAH Pool)**: `src/workers/dedicated-worker.ts`
 - **Main-thread wrapper**: `src/lib/workers/WorkerManager.ts`
 - **Message contracts**: `src/lib/workers/messages.ts`
 - **Integration tests**: `tests/sharedworker.spec.ts`
@@ -67,6 +67,12 @@ const res = await page.evaluate(
 - Dev server: `pnpm dev` (SvelteKit on `http://127.0.0.1:5173`)
 - Tests: `pnpm test` (Playwright starts/reuses the dev server per `playwright.config.ts`)
 
+### Demo UI
+
+- A minimal demo page is available at the root route.
+- It shows the current tab ID, the active tab ID, and provides a textarea to run SQL via the SharedWorker/Dedicated Worker path.
+- Edit SQL and click Run to see JSON results.
+
 Notes:
 - The Playwright config sets `reuseExistingServer: true`. If you already have a dev server on `127.0.0.1:5173`, tests will reuse it.
 - If the port is in use by another project, either stop that server or change one of the ports.
@@ -95,13 +101,12 @@ Notes:
 - SharedWorker not supported
   - `WorkerManager` detects environment; if you need a non-SharedWorker fallback, extend it to use a dedicated worker-only mode.
 
-### Extending to a real SQLite worker later
+### SQLite integration details
 
-Replace the mock logic in `src/workers/dedicated-worker.ts` with your WASM SQLite integration. Keep the wire protocol the same:
-
-- On promotion, open the OPFS connection and emit `DB_OPENED`.
-- On `FORWARD_QUERY`, execute and respond with `QUERY_RESULT { requestId, fromTabId, result }` (or `QUERY_ERROR`).
-- The SharedWorker will keep translating results into `QUERY_RESPONSE` for pages and handle failover.
+- The dedicated worker initializes SQLite WASM and installs the OPFS SyncAccessHandle Pool VFS (`opfs-sahpool`).
+- It opens a database at `/reactive.sqlite3` via `OpfsSAHPoolDb`. If SAH Pool is unavailable, it will try `OpfsDb` (requires COOP/COEP). In headless tests, it fails fast rather than silently using a memory DB.
+- On promotion, it opens the DB and emits `DB_OPENED`. On `FORWARD_QUERY`, it executes and posts `QUERY_RESULT` (or `QUERY_ERROR`).
+- The SharedWorker forwards results to the requesting tab as `QUERY_RESPONSE`.
 
 ## SQL Schema Design
 

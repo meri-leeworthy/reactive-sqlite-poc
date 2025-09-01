@@ -39,6 +39,10 @@
           ).activeTabId;
           window.postMessage(msg, "*");
         }
+        if (msg.type === "DB_OPENED") {
+          (window as unknown as { __DB_READY: boolean }).__DB_READY = true;
+          window.postMessage(msg, "*");
+        }
       });
 
       console.log("App: WorkerManager initialized successfully");

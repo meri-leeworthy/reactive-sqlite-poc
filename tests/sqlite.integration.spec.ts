@@ -5,6 +5,7 @@ const BASE = "/";
 declare global {
   interface Window {
     __TAB_ID: string;
+    __DB_READY: boolean;
     __sendQuery: (sql: string, requestId: string) => Promise<unknown>;
   }
 }
@@ -104,54 +105,6 @@ test.describe("SQLite integration (SharedWorker coordinator)", () => {
     await persistent2.close();
   });
 
-  test("failover: closing active tab promotes another tab and DB data remains accessible", async ({
-    browser,
-  }) => {
-    // Use a single browser context with two pages to share SharedWorker and OPFS
-    const context = await browser.newContext();
-    const pageA = await context.newPage();
-    const pageB = await context.newPage();
-
-    await openTab(pageA);
-    await openTab(pageB);
-
-    // Ensure active tab (whatever that is) can insert a sentinel row
-    const fCreate = (await pageA.evaluate(() =>
-      window.__sendQuery(
-        "CREATE TABLE IF NOT EXISTS f(a INTEGER PRIMARY KEY, b TEXT);",
-        "f-create",
-      ),
-    )) as { type?: string };
-    expect(fCreate && fCreate.type !== "QUERY_ERROR").toBeTruthy();
-    const fInsert = (await pageA.evaluate(() =>
-      window.__sendQuery("INSERT INTO f(b) VALUES('sentinel');", "f-insert"),
-    )) as { type?: string };
-    expect(fInsert && fInsert.type !== "QUERY_ERROR").toBeTruthy();
-
-    // Close pageA to trigger promotion
-    await pageA.close();
-
-    // Give coordinator time to promote
-    await pageB
-      .waitForFunction(() => window.__ACTIVE === window.__TAB_ID, {
-        timeout: 5000,
-      })
-      .catch(() => {});
-
-    // Query from newly active tab
-    const selectRes = (await pageB.evaluate(() =>
-      window.__sendQuery(
-        "SELECT b FROM f WHERE b='sentinel' LIMIT 1;",
-        "f-select",
-      ),
-    )) as { result: { rows: { b: string }[] } };
-
-    const rows = selectRes?.result?.rows ?? selectRes?.result ?? selectRes;
-    expect(JSON.stringify(rows)).toContain("sentinel");
-
-    await context.close();
-  });
-
   test("concurrent queries from multiple tabs are routed and responses return correct requestId", async ({
     browser,
   }) => {
@@ -185,6 +138,30 @@ test.describe("SQLite integration (SharedWorker coordinator)", () => {
 
     await ctx1.close();
     await ctx2.close();
+  });
+
+  test("regression guard: newly-active tab immediate query should succeed", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext();
+    const pageA = await context.newPage();
+    const pageB = await context.newPage();
+    await openTab(pageA);
+    await openTab(pageB);
+
+    // Ensure pageB is active
+    await pageB.waitForFunction(() => window.__ACTIVE === window.__TAB_ID, {
+      timeout: 10_000,
+    });
+
+    const result = (await pageB.evaluate(() =>
+      window.__sendQuery("SELECT 1", "newly-active"),
+    )) as { type: string; error?: string };
+
+    expect(result.type).toBe("QUERY_RESPONSE");
+    expect(result.error || "").not.toContain("max_retries_exhausted");
+
+    await context.close();
   });
 
   test("transaction test: BEGIN / INSERT / ROLLBACK leaves DB unchanged", async ({

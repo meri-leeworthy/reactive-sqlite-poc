@@ -21,7 +21,12 @@ type ForwardQueryMessage = {
   sql: string;
 };
 
-type InboundMessage = InitMessage | PromoteMessage | ForwardQueryMessage;
+type DemoteMessage = { type: "DEMOTE"; tabId: string };
+type InboundMessage =
+  | InitMessage
+  | PromoteMessage
+  | ForwardQueryMessage
+  | DemoteMessage;
 
 type WorkerReady = { type: "WORKER_READY"; tabId: string | null };
 type DbOpened = { type: "DB_OPENED"; tabId: string | null };
@@ -114,6 +119,14 @@ ctx.onmessage = (e: MessageEvent<InboundMessage>) => {
           } as QueryError);
         });
     }
+  }
+
+  if (m.type === "DEMOTE") {
+    // Acknowledge demotion; future: could close DB to release SAH slots
+    ctx.postMessage({ type: "DEMOTED", tabId } as {
+      type: string;
+      tabId: string | null;
+    });
   }
 
   if (m.type === "FORWARD_QUERY") {

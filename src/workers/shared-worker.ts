@@ -138,9 +138,18 @@ function pickNextActive(exclude?: TabId | null): TabId | null {
 
 function setActive(tabId: TabId | null) {
   if (activeTabId === tabId) return;
+  const prev = activeTabId;
   activeTabId = tabId;
+  // Clear DB ownership when switching actives so the new active can announce DB_OPENED
+  if (prev && prev !== activeTabId) {
+    dbOpenedBy = null;
+  }
   metrics.connectedTabs = connections.size;
   log("info", "active_changed", { activeTabId, connected: connections.size });
+  if (prev && connections.has(prev)) {
+    const prevConn = connections.get(prev)!;
+    prevConn.port.postMessage({ type: "DEMOTE", tabId: prev } as BaseMsg);
+  }
   broadcast({ type: "ACTIVE_CHANGED", activeTabId } as BaseMsg);
 }
 
@@ -267,8 +276,12 @@ function scheduleQueryAttempt(pq: PendingQuery) {
         activeTabId,
       });
       try {
+        // Forward once and wait for DB to open + worker to respond.
+        // Do NOT schedule another attempt here, to avoid max_retries while the DB initializes.
         forwardQueryToActive(pq);
+        return;
       } catch {
+        // If forwarding failed synchronously, retry later.
         scheduleQueryAttempt(pq);
       }
     } else {
@@ -294,6 +307,9 @@ setInterval(() => {
   if (!conn) {
     log("warn", "active_missing_connection", { activeTabId });
     metrics.failovers++;
+    if (activeTabId && activeTabId === dbOpenedBy) {
+      dbOpenedBy = null;
+    }
     const next = pickNextActive(activeTabId);
     setActive(next);
     if (next) promoteTab(next);
@@ -309,6 +325,9 @@ setInterval(() => {
   if (since > HEARTBEAT_TIMEOUT_MS) {
     log("warn", "active_heartbeat_timeout", { activeTabId, since });
     metrics.failovers++;
+    if (activeTabId && activeTabId === dbOpenedBy) {
+      dbOpenedBy = null;
+    }
     const next = pickNextActive(activeTabId);
     setActive(next);
     if (next) promoteTab(next);
@@ -354,6 +373,9 @@ onconnect = (e: MessageEvent) => {
         connections.delete(tabId);
         metrics.connectedTabs = connections.size;
         log("info", "tab_unregistered", { tabId, connected: connections.size });
+        if (dbOpenedBy === tabId) {
+          dbOpenedBy = null;
+        }
         if (tabId === activeTabId) {
           metrics.failovers++;
           const next = pickNextActive(tabId);

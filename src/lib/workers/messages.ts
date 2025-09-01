@@ -11,6 +11,8 @@ export type ActiveChanged = {
 export type Heartbeat = { type: "HEARTBEAT" };
 export type HeartbeatPong = { type: "HEARTBEAT_PONG"; tabId: string };
 export type DbOpened = { type: "DB_OPENED"; tabId: string };
+export type Demote = { type: "DEMOTE"; tabId: string };
+export type Demoted = { type: "DEMOTED"; tabId: string };
 
 // Web Locks liveness notifications (from page to SharedWorker)
 export type LockHeld = { type: "LOCK_HELD"; tabId: string };
@@ -56,6 +58,8 @@ export type ToSharedWorker =
 export type FromSharedWorker =
   | ActiveChanged
   | PromoteToActive
+  | Demote
+  | DbOpened
   | ForwardQuery
   | QueryResponse
   | QueryError
