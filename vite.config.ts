@@ -13,10 +13,18 @@ export default defineConfig({
     fs: {
       allow: [allowDir],
     },
+    headers: {
+      // added to support SQLite in Workers
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+    },
   },
   build: {
     target: "es2022",
     chunkSizeWarningLimit: 2048,
     sourcemap: true,
+  },
+  optimizeDeps: {
+    exclude: ["@sqlite.org/sqlite-wasm"],
   },
 });

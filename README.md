@@ -371,3 +371,122 @@ Replace the mock logic in `src/workers/dedicated-worker.ts` with your WASM SQLit
 - On promotion, open the OPFS connection and emit `DB_OPENED`.
 - On `FORWARD_QUERY`, execute and respond with `QUERY_RESULT { requestId, fromTabId, result }` (or `QUERY_ERROR`).
 - The SharedWorker will keep translating results into `QUERY_RESPONSE` for pages and handle failover.
+
+## Reproducing the Notion approach
+
+### Quick take
+- You’ve reproduced the high‑level “SharedWorker coordinator + per‑tab worker + single active tab for DB work” pattern reasonably well.
+- The core Notion specifics (Web Locks for liveness, WASM SQLite on OPFS SAH Pool, async loading, true SQL execution + persistence) are not implemented yet.
+
+### What matches the article
+- SharedWorker coordinator that elects a single active tab and forwards queries
+  - Evidence:
+```147:158:src/workers/shared-worker.ts
+function promoteTab(tabId: TabId) {
+  setTimeout(() => {
+    if (!connections.has(tabId)) return;
+    setActive(tabId);
+    const conn = connections.get(tabId)!;
+    conn.port.postMessage({
+      type: "PROMOTE_TO_ACTIVE",
+      tabId,
+    } as PromoteToActiveMsg);
+  }, PROMOTION_GRACE_MS);
+}
+```
+- Query routing from any tab to the active tab with retries/backoff and failover
+```178:201:src/workers/shared-worker.ts
+function enqueueQuery(originTabId: TabId, requestId: string, sql: string, params?: unknown) {
+  const now = Date.now();
+  const pq: PendingQuery = { originTabId, requestId, sql, params, attempts: 0, nextRetryMs: 0, enqueuedAt: now };
+  pendingQueries.set(requestId, pq);
+  scheduleQueryAttempt(pq);
+}
+```
+- Per‑tab dedicated worker that opens when promoted and answers forwarded queries (currently mocked)
+```37:55:src/workers/dedicated-worker.ts
+if (m.type === "PROMOTE_TO_ACTIVE") {
+  if (m.tabId === tabId) {
+    setTimeout(() => {
+      ctx.postMessage({ type: "DB_OPENED", tabId } as DbOpened);
+    }, 20);
+  }
+}
+if (m.type === "FORWARD_QUERY") {
+  const { requestId, fromTabId, sql } = m;
+  setTimeout(() => {
+    ctx.postMessage({ type: "QUERY_RESULT", requestId, fromTabId, result: { echo: sql, tabId } });
+  }, 20);
+}
+```
+
+### What’s missing or diverges from the article
+
+- Web Locks are not used (article’s “infinite Web Lock per tab” liveness)
+  - You have lock message types in the coordinator but nothing acquires and maintains real Web Locks in the page, nor sends those messages.
+```18:25:src/workers/shared-worker.ts
+interface LockHeldMsg extends BaseMsg { type: "LOCK_HELD"; tabId: TabId; }
+interface LockReleasedMsg extends BaseMsg { type: "LOCK_RELEASED"; tabId: TabId; }
+```
+```365:381:src/workers/shared-worker.ts
+case "LOCK_HELD": { ... }
+case "LOCK_RELEASED": { ... }
+```
+  - Current liveness relies on beforeunload + heartbeats; no `navigator.locks.request(...)` anywhere.
+
+- No WASM SQLite/OPFS integration (the essence of the piece)
+  - Dependency is present but unused.
+```60:64:package.json
+"dependencies": {
+  "@sqlite.org/sqlite-wasm": "3.50.4-build1",
+  "vite-plugin-arraybuffer": "^0.1.0",
+  "vite-plugin-top-level-await": "^1.6.0",
+  "vite-plugin-wasm": "^3.5.0"
+}
+```
+  - Worker logic is a placeholder; per‑tab worker just echoes.
+```1:3:src/workers/worker-logic.ts
+// Intentionally left as a placeholder. The wa-sqlite implementation has been removed.
+```
+
+- No OPFS SAH Pool VFS selection or single-writer constraints (the key concurrency fix)
+  - The active‑tab routing exists, but the DB isn’t actually opened via `opfs-sahpool` and isn’t persisted.
+
+- Heartbeat pongs aren’t wired from the page
+  - Coordinator sends HEARTBEAT, but nothing replies with HEARTBEAT_PONG. This is weaker than the article’s Web Lock approach and could cause spurious failovers.
+```291:316:src/workers/shared-worker.ts
+conn.port.postMessage({ type: "HEARTBEAT" });
+// expects HEARTBEAT_PONG, but WorkerManager/page never respond
+```
+
+- No async, non‑blocking loading of the SQLite WASM bundle (article’s perf mitigation)
+  - There’s no lazy import/init path in `dedicated-worker.ts` for SQLite.
+
+- No “race network vs cache” behavior for slow devices (article mitigation)
+  - Tests indicate intent to validate DDL/DML and persistence, but current implementation can’t pass them (as your test artifacts show).
+
+- No fallback when SharedWorker is unavailable
+  - Manager detects SharedWorker, but if absent, it does not fall back to a dedicated‑only mode.
+```29:35:src/lib/workers/WorkerManager.ts
+if (typeof SharedWorker !== "undefined") { this.workerKind = "shared"; } else { this.workerKind = "none"; }
+```
+
+### Concrete gaps to close (in priority order)
+- Implement real Web Locks on the page:
+  - Acquire a never‑resolving lock on mount; send `LOCK_HELD`/`LOCK_RELEASED` to the coordinator.
+- Wire SQLite WASM (opfs-sahpool) inside `src/workers/dedicated-worker.ts`:
+  - On PROMOTE_TO_ACTIVE, open DB via SAH Pool; on FORWARD_QUERY, run SQL and return real results.
+  - Load the WASM module asynchronously to avoid blocking page load.
+- Add heartbeat pong from the page (or drop heartbeat entirely once Web Locks are in place).
+- Enable persistence tests by actually using OPFS-backed VFS.
+- Add a dedicated‑only fallback if SharedWorker is unavailable.
+
+### Bottom line
+- Core coordinator/forwarder shape matches the article.
+- The critical pieces that made it robust and fast at Notion (Web Locks liveness, WASM SQLite on OPFS SAH Pool, async load, true SQL/persistence, device-sensitive behavior) are not yet implemented, so the current code is an architectural scaffold rather than a faithful reproduction.
+
+- Summary:
+  - Implement Web Locks and SQLite WASM (OPFS SAH Pool) in the dedicated worker.
+  - Reply to HEARTBEAT or remove it after Web Locks.
+  - Load WASM async and consider “race network vs cache” later.
+  - Then your integration tests should pass and the setup will align closely with the Notion approach.
