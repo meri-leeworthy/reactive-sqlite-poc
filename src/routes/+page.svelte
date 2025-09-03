@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { LeafClient } from "$lib/workers/client";
+  import { LeafClient } from "$lib/db/client";
   import { onMount } from "svelte";
 
   let sql = "SELECT datetime('now') as now;";

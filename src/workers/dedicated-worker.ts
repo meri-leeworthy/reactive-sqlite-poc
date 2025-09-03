@@ -3,7 +3,7 @@ import {
   initializeDatabase,
   executeQuery,
   isDatabaseReady,
-} from "./worker-logic";
+} from "./setup-sqlite";
 
 let tabId: string | null = null;
 let dbInitStarted = false;
