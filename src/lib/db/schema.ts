@@ -7,10 +7,10 @@ export const pragmaForeignKeys = `PRAGMA foreign_keys = ON;`;
 export const createEntitiesTable = `
 CREATE TABLE IF NOT EXISTS entities (
   ulid BLOB PRIMARY KEY, 
-  type TEXT, 
+  label TEXT CHECK(label IN ('notification', 'embed', 'device', 'user', 'timeline', 'message', 'task', 'space')), 
   created_at INTEGER
 ) STRICT;`;
-export const createEntitiesIndex = `CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type);`;
+export const createEntitiesIndex = `CREATE INDEX IF NOT EXISTS idx_entities_label ON entities(label);`;
 
 export const createEventsTable = `CREATE TABLE IF NOT EXISTS events (
   event_ulid BLOB PRIMARY KEY,
@@ -25,9 +25,10 @@ export const createEdgesTable = `
 CREATE TABLE IF NOT EXISTS edges (
     head BLOB NOT NULL,
     tail BLOB NOT NULL,
-    kind TEXT NOT NULL,
+    label TEXT NOT NULL CHECK(label IN ('child', 'parent', 'subscribe', 'member', 'ban', 'hide', 'pin', 'last_read', 'embed', 'reply', 'link', 'author', 'reorder', 'source', 'avatar')),
+    payload TEXT CHECK(json_valid(payload)),
     created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
-    PRIMARY KEY (head, tail, kind),
+    PRIMARY KEY (head, tail, label),
     FOREIGN KEY (head) REFERENCES entities(ulid) ON DELETE CASCADE,
     FOREIGN KEY (tail) REFERENCES entities(ulid) ON DELETE CASCADE
 ) STRICT;
@@ -35,8 +36,8 @@ CREATE TABLE IF NOT EXISTS edges (
 
 export const createEdgesHeadIndex = `CREATE INDEX IF NOT EXISTS idx_edges_head ON edges(head);`;
 export const createEdgesTailIndex = `CREATE INDEX IF NOT EXISTS idx_edges_tail ON edges(tail);`;
-export const createEdgesHeadKindIndex = `CREATE INDEX IF NOT EXISTS idx_edges_head_kind ON edges(head, kind);`;
-export const createEdgesTailKindIndex = `CREATE INDEX IF NOT EXISTS idx_edges_tail_kind ON edges(tail, kind);`;
+export const createEdgesHeadLabelIndex = `CREATE INDEX IF NOT EXISTS idx_edges_head_label ON edges(head, label);`;
+export const createEdgesTailLabelIndex = `CREATE INDEX IF NOT EXISTS idx_edges_tail_label ON edges(tail, label);`;
 
 export const createCompProfileTable = `
 CREATE TABLE IF NOT EXISTS comp_profile (
@@ -68,19 +69,17 @@ CREATE TABLE IF NOT EXISTS comp_page (
 ) STRICT;
 `;
 
-export const createCompUploadMediaTable = `
-CREATE TABLE IF NOT EXISTS comp_upload_media (
+export const createCompUploadTable = `
+CREATE TABLE IF NOT EXISTS comp_upload (
     entity TEXT PRIMARY KEY REFERENCES entities(ulid) ON DELETE CASCADE,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
-    media_type TEXT CHECK(media_type IN ('image','video')),
+    type TEXT CHECK(type IN ('image','video','file')),
     status TEXT CHECK(status IN ('pending','processing','completed','failed')),
     url TEXT,
-    attach_to_message_id BLOB REFERENCES entities(ulid)
 ) STRICT;
 `;
-export const createCompUploadMediaIndex = `CREATE INDEX IF NOT EXISTS idx_upload_media_status ON comp_upload_media(status);`;
-export const createCompUploadMediaIndexAttach = `CREATE INDEX IF NOT EXISTS idx_upload_media_attach ON comp_upload_media(attach_to_message_id);`;
+export const createCompUploadIndex = `CREATE INDEX IF NOT EXISTS idx_upload_status ON comp_upload(status);`;
 
 export const createCompUserAccessTimesTable = `
 CREATE TABLE IF NOT EXISTS comp_user_access_times (
@@ -120,8 +119,8 @@ CREATE TABLE IF NOT EXISTS comp_name (
 `;
 export const createCompNameIndex = `CREATE INDEX IF NOT EXISTS idx_name_name ON comp_name(name);`;
 
-export const createCompImageTable = `
-CREATE TABLE IF NOT EXISTS comp_image (
+export const createCompMediaTable = `
+CREATE TABLE IF NOT EXISTS comp_media (
     entity TEXT PRIMARY KEY REFERENCES entities(ulid) ON DELETE CASCADE,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
@@ -131,7 +130,7 @@ CREATE TABLE IF NOT EXISTS comp_image (
     uri TEXT
 ) STRICT;
 `;
-export const createCompImageIndex = `CREATE INDEX IF NOT EXISTS idx_image_uri ON comp_image(uri);`;
+export const createCompMediaIndex = `CREATE INDEX IF NOT EXISTS idx_media_uri ON comp_media(uri);`;
 
 export const createCompIdentifierTable = `
 

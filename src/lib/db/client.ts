@@ -67,8 +67,8 @@ export class LeafClient {
     await this.run(schema.createEdgesTable);
     await this.run(schema.createEdgesHeadIndex);
     await this.run(schema.createEdgesTailIndex);
-    await this.run(schema.createEdgesHeadKindIndex);
-    await this.run(schema.createEdgesTailKindIndex);
+    await this.run(schema.createEdgesHeadLabelIndex);
+    await this.run(schema.createEdgesTailLabelIndex);
 
     await this.run(schema.createCompProfileTable);
     await this.run(schema.createCompProfileIndex);
@@ -78,9 +78,8 @@ export class LeafClient {
 
     await this.run(schema.createCompPageTable);
 
-    await this.run(schema.createCompUploadMediaTable);
-    await this.run(schema.createCompUploadMediaIndex);
-    await this.run(schema.createCompUploadMediaIndexAttach);
+    await this.run(schema.createCompUploadTable);
+    await this.run(schema.createCompUploadIndex);
 
     await this.run(schema.createCompUserAccessTimesTable);
     await this.run(schema.createCompUserAccessTimesCreatedIndex);
@@ -95,8 +94,8 @@ export class LeafClient {
     await this.run(schema.createCompNameTable);
     await this.run(schema.createCompNameIndex);
 
-    await this.run(schema.createCompImageTable);
-    await this.run(schema.createCompImageIndex);
+    await this.run(schema.createCompMediaTable);
+    await this.run(schema.createCompMediaIndex);
 
     await this.run(schema.createCompIdentifierTable);
     await this.run(schema.createCompIdentifierIndex);

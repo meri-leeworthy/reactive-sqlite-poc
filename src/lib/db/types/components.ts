@@ -4,11 +4,11 @@ export type ComponentName =
   | "profile"
   | "config"
   | "page"
-  | "upload_media"
+  | "upload"
   | "user_access_times"
   | "text_content"
   | "name"
-  | "image"
+  | "media"
   | "identifier"
   | "description"
   | "url";
@@ -27,21 +27,17 @@ export interface CompProfile extends BaseComponent {
 
 export interface CompConfig extends BaseComponent {
   // Stored as TEXT with json_valid(config) constraint
-  config: string | null;
+  config: unknown | null;
 }
 
 export type CompPage = BaseComponent;
 
-export type UploadMediaType = "image" | "video";
-export type UploadMediaStatus =
-  | "pending"
-  | "processing"
-  | "completed"
-  | "failed";
+export type UploadType = "image" | "video" | "file";
+export type UploadStatus = "pending" | "processing" | "completed" | "failed";
 
-export interface CompUploadMedia extends BaseComponent {
-  media_type: UploadMediaType | null;
-  status: UploadMediaStatus | null;
+export interface CompUpload extends BaseComponent {
+  media_type: UploadType | null;
+  status: UploadStatus | null;
   url: string | null;
   attach_to_message_id: Uint8Array | null;
 }
@@ -57,7 +53,7 @@ export interface CompName extends BaseComponent {
   name: string | null;
 }
 
-export interface CompImage extends BaseComponent {
+export interface CompMedia extends BaseComponent {
   mime_type: string | null;
   width: number | null;
   height: number | null;
@@ -80,12 +76,26 @@ export type ComponentMap = {
   profile: CompProfile;
   config: CompConfig;
   page: CompPage;
-  upload_media: CompUploadMedia;
+  upload: CompUpload;
   user_access_times: CompUserAccessTimes;
   text_content: CompTextContent;
   name: CompName;
-  image: CompImage;
+  media: CompMedia;
   identifier: CompIdentifier;
   description: CompDescription;
   url: CompUrl;
+};
+
+/** Given one or two tuples of component names, produces a record whose keys are exactly
+ * those component names and whose values are the corresponding component types.
+ * First parameter lists REQUIRED component names. Second lists OPTIONAL names.
+ * Result keys are the union of required and optional, with required taking precedence.
+ */
+export type ComponentsRecord<
+  TRequired extends readonly ComponentName[],
+  TOptional extends readonly Exclude<ComponentName, TRequired[number]>[] = [],
+> = {
+  [K in TRequired[number]]: ComponentMap[K];
+} & {
+  [K in TOptional[number]]?: ComponentMap[K];
 };
