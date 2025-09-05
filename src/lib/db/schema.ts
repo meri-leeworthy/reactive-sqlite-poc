@@ -19,7 +19,7 @@ export const createEventsTable = `CREATE TABLE IF NOT EXISTS events (
   created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 ) STRICT;`;
 export const createEventsIndex = `CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);`;
-export const createEventsIndexEntityCreated = `CREATE INDEX IF NOT EXISTS idx_events_entity_created ON events(entity_id, created_at, event_ulid);`;
+export const createEventsIndexEntityCreated = `CREATE INDEX IF NOT EXISTS idx_events_entity_created ON events(entity_ulid, created_at, event_ulid);`;
 
 export const createEdgesTable = `
 CREATE TABLE IF NOT EXISTS edges (
@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS comp_upload (
     updated_at INTEGER NOT NULL,
     type TEXT CHECK(type IN ('image','video','file')),
     status TEXT CHECK(status IN ('pending','processing','completed','failed')),
-    url TEXT,
+    url TEXT
 ) STRICT;
 `;
 export const createCompUploadIndex = `CREATE INDEX IF NOT EXISTS idx_upload_status ON comp_upload(status);`;
