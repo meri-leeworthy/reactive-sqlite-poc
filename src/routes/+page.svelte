@@ -1,16 +1,78 @@
 <script lang="ts">
   import { LeafClient } from "$lib/db/client";
   import { onMount } from "svelte";
+  import { ulid } from "ulid";
 
-  let sql = "SELECT datetime('now') as now;";
   let output: string = "";
 
   const client = new LeafClient();
 
-  async function run() {
-    output = "Running...";
-    // output = await client.run(sql);
-    output = await client.initSchema();
+  const log = (v: unknown) => (output = JSON.stringify(v, null, 2));
+
+  async function initSchema() {
+    output = "Initializing schema...";
+    const res = await client.initSchema();
+    log(res);
+  }
+
+  // Sample event actions
+  async function sampleUserCreate() {
+    const userId = ulid();
+    const res = await client.userCreate(userId, {
+      name: { name: "Ada Lovelace" },
+      description: { description: "First programmer" },
+      profile: {
+        blueskyHandle: "@ada.example",
+        bannerUrl: null,
+        joinedDate: Date.now(),
+      },
+      config: { config: { theme: "dark" } as unknown },
+    });
+    log({ userId, res });
+  }
+
+  async function sampleThreadAndMessage() {
+    const spaceId = ulid();
+    const threadId = ulid();
+    const messageId = ulid();
+    const authorId = ulid();
+    await client.spaceCreate(spaceId, { name: { name: "General" } });
+    await client.threadCreate(threadId, {
+      spaceId,
+      name: { name: "Introductions" },
+      description: { description: "Say hi" },
+    });
+    const res = await client.messagePost(messageId, threadId, authorId, {
+      text: "Hello, world!",
+      format: "plain",
+    });
+    log({ spaceId, threadId, messageId, authorId, res });
+  }
+
+  async function sampleEdges() {
+    const userId = ulid();
+    const threadId = ulid();
+    await client.userSubscribeThread(userId, threadId);
+    const res = await client.edgeUpdate(
+      "ignored-entity",
+      "last_read",
+      userId,
+      threadId,
+      {
+        timestamp: Date.now(),
+      },
+    );
+    log({ userId, threadId, res });
+  }
+
+  async function sampleUploadFlow() {
+    const uploadId = ulid();
+    await client.uploadStart(uploadId, "image");
+    const res = await client.uploadComplete(
+      uploadId,
+      "https://example.com/pic.jpg",
+    );
+    log({ uploadId, res });
   }
 
   onMount(() => {
@@ -26,17 +88,39 @@
     <div>Active Tab: {client.active ?? "(none)"}</div>
   </div>
 
-  <div class="space-y-2">
-    <label for="sql" class="block text-sm font-medium">SQL</label>
-    <textarea
-      id="sql"
-      bind:value={sql}
-      rows={4}
-      class="p-2 w-full rounded border"
-    ></textarea>
-    <button on:click={run} class="px-3 py-1.5 text-white bg-black rounded"
-      >Run</button
-    >
+  <div class="space-y-3">
+    <div class="flex flex-wrap gap-2">
+      <button
+        on:click={initSchema}
+        class="px-3 py-1.5 text-white bg-black rounded"
+      >
+        Init Schema
+      </button>
+      <button
+        on:click={sampleUserCreate}
+        class="px-3 py-1.5 text-white bg-blue-600 rounded"
+      >
+        Sample: Create User
+      </button>
+      <button
+        on:click={sampleThreadAndMessage}
+        class="px-3 py-1.5 text-white bg-green-600 rounded"
+      >
+        Sample: Thread + Message
+      </button>
+      <button
+        on:click={sampleEdges}
+        class="px-3 py-1.5 text-white bg-purple-600 rounded"
+      >
+        Sample: Edges (subscribe/last_read)
+      </button>
+      <button
+        on:click={sampleUploadFlow}
+        class="px-3 py-1.5 text-white bg-orange-600 rounded"
+      >
+        Sample: Upload Flow
+      </button>
+    </div>
   </div>
 
   <div class="space-y-2">
