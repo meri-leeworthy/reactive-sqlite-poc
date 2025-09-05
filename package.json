@@ -59,6 +59,7 @@
   "dependencies": {
     "@sqlite.org/sqlite-wasm": "3.50.4-build1",
     "kysely": "^0.28.5",
+    "ulid": "^3.0.1",
     "vite-plugin-arraybuffer": "^0.1.0",
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.5.0"

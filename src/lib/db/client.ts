@@ -1,20 +1,60 @@
 import * as schema from "./schema";
+import type { AnyEvent, ComponentData, EdgePayload } from "./types/events";
+import type { ComponentName } from "./types/components";
+import type { EntityLabel } from "./types/entities";
+import type { EdgeMember, EdgeReaction, EdgeLastRead } from "./types/edges";
+import { ulid } from "ulid";
 
 export class LeafClient {
   active: string | null = null;
   tabId: string | null = null;
+  debug: boolean = false;
   handler: (e: MessageEvent) => void = () => {};
   private sendQuery:
     | ((sql: string, requestId: string) => Promise<unknown>)
+    | null = null;
+  private sendEvent:
+    | ((event: AnyEvent, requestId: string) => Promise<unknown>)
     | null = null;
 
   private genId() {
     return Math.random().toString(36).slice(2);
   }
 
+  private log(message: string, ...args: unknown[]) {
+    if (this.debug) {
+      if (Array.isArray(args)) {
+        console.log(message, ...args);
+      } else {
+        console.log(message, args);
+      }
+    }
+  }
+
+  private error(message: string, ...args: unknown[]) {
+    if (this.debug) {
+      if (Array.isArray(args)) {
+        console.error(message, ...args);
+      } else {
+        console.error(message, args);
+      }
+    }
+  }
+
   onMount() {
     if (!this.sendQuery) {
       this.sendQuery = window.__sendQuery;
+    }
+    if (!this.sendEvent) {
+      this.sendEvent =
+        (
+          window as unknown as {
+            __sendEvent?: (
+              event: AnyEvent,
+              requestId: string,
+            ) => Promise<unknown>;
+          }
+        ).__sendEvent || null;
     }
     this.tabId = window.__TAB_ID || null;
     this.active = window.__ACTIVE || null;
@@ -41,11 +81,10 @@ export class LeafClient {
         id,
       )) as Record<string, unknown>;
       if ("error" in res) {
-        console.error(sql, res);
+        this.error(sql, res);
       } else {
-        console.log(sql, res);
+        this.log(sql, res);
       }
-      // const json = JSON.stringify(res, null, 2);
       return res;
     } catch (e) {
       return String(e);
@@ -53,6 +92,7 @@ export class LeafClient {
   }
 
   async initSchema() {
+    this.debug = true;
     await this.run(schema.pragmaLockingMode);
     await this.run(schema.pragmaWal);
     await this.run(schema.pragmaForeignKeys);
@@ -107,5 +147,371 @@ export class LeafClient {
     await this.run(schema.createCompUrlIndex);
 
     return "Schema initialized";
+  }
+
+  // ============ Event API ============
+  private ensureSendEvent() {
+    if (!this.sendEvent) {
+      this.sendEvent =
+        (
+          window as unknown as {
+            __sendEvent?: (
+              event: AnyEvent,
+              requestId: string,
+            ) => Promise<unknown>;
+          }
+        ).__sendEvent || null;
+    }
+    if (!this.sendEvent) throw new Error("__sendEvent not initialized");
+  }
+
+  async emit(event: AnyEvent) {
+    this.ensureSendEvent();
+    const id = this.genId();
+    try {
+      const res = (await this.sendEvent!(event, id)) as Record<string, unknown>;
+      this.log("event", res);
+      return res;
+    } catch (e) {
+      this.error("emit", e);
+      return { error: String(e) } as const;
+    }
+  }
+
+  // ===== Core events helpers =====
+  entityCreate(entityId: string, label: EntityLabel) {
+    return this.emit({
+      type: "entity.create",
+      eventId: ulid(),
+      entityId,
+      label,
+    });
+  }
+  entityDelete(entityId: string) {
+    return this.emit({
+      type: "entity.delete",
+      eventId: ulid(),
+      entityId,
+    });
+  }
+  entitySetLabel(entityId: string, label: EntityLabel) {
+    return this.emit({
+      type: "entity.set_label",
+      eventId: ulid(),
+      entityId,
+      label,
+    });
+  }
+  componentUpsert<K extends ComponentName>(
+    entityId: string,
+    component: K,
+    data: Partial<import("./types/components").ComponentMap[K]> &
+      Partial<import("./types/components").BaseComponent>,
+  ) {
+    // Strip base fields if provided
+    const tmp = {
+      ...(data as Partial<import("./types/components").ComponentMap[K]> &
+        Partial<import("./types/components").BaseComponent>),
+    };
+    delete (tmp as Partial<import("./types/components").BaseComponent>).entity;
+    delete (tmp as Partial<import("./types/components").BaseComponent>)
+      .created_at;
+    delete (tmp as Partial<import("./types/components").BaseComponent>)
+      .updated_at;
+    const rest = tmp as Partial<ComponentData<K>>;
+    return this.emit({
+      type: "component.upsert",
+      eventId: ulid(),
+      entityId,
+      component,
+      data: rest,
+    });
+  }
+  componentRemove<K extends ComponentName>(entityId: string, component: K) {
+    return this.emit({
+      type: "component.remove",
+      eventId: ulid(),
+      entityId,
+      component,
+    });
+  }
+  edgeAdd<K extends import("./types/edges").EdgeLabel>(
+    entityId: string,
+    label: K,
+    head: string,
+    tail: string,
+    payload: EdgePayload<K>,
+  ) {
+    return this.emit({
+      type: "edge.add",
+      eventId: ulid(),
+      entityId,
+      label,
+      head,
+      tail,
+      payload,
+    });
+  }
+  edgeRemove<K extends import("./types/edges").EdgeLabel>(
+    entityId: string,
+    label: K,
+    head: string,
+    tail: string,
+  ) {
+    return this.emit({
+      type: "edge.remove",
+      eventId: ulid(),
+      entityId,
+      label,
+      head,
+      tail,
+    });
+  }
+  edgeUpdate<K extends "reaction" | "last_read" | "member">(
+    entityId: string,
+    label: K,
+    head: string,
+    tail: string,
+    payload: EdgePayload<K>,
+  ) {
+    return this.emit({
+      type: "edge.update",
+      eventId: ulid(),
+      entityId,
+      label,
+      head,
+      tail,
+      payload,
+    });
+  }
+
+  // ===== Domain helpers (examples) =====
+  userCreate(
+    userId: string,
+    data?: {
+      name?: Partial<import("./types/components").CompName>;
+      description?: Partial<import("./types/components").CompDescription>;
+      profile?: Partial<import("./types/components").CompProfile>;
+      config?: Partial<import("./types/components").CompConfig>;
+      avatarImageId?: string;
+    },
+  ) {
+    return this.emit({
+      type: "user.create",
+      eventId: ulid(),
+      userId,
+      ...data,
+    } as AnyEvent);
+  }
+  userSubscribeThread(userId: string, threadId: string) {
+    return this.emit({
+      type: "user.subscribe_thread",
+      eventId: ulid(),
+      userId,
+      threadId,
+    } as AnyEvent);
+  }
+  spaceCreate(
+    spaceId: string,
+    data?: {
+      name?: Partial<import("./types/components").CompName>;
+      description?: Partial<import("./types/components").CompDescription>;
+      avatarImageId?: string;
+    },
+  ) {
+    return this.emit({
+      type: "space.create",
+      eventId: ulid(),
+      spaceId,
+      ...data,
+    } as AnyEvent);
+  }
+  spaceAddMember(spaceId: string, userId: string, member: EdgeMember) {
+    return this.emit({
+      type: "space.add_member",
+      eventId: ulid(),
+      spaceId,
+      userId,
+      member,
+    } as AnyEvent);
+  }
+  spaceRemoveMember(spaceId: string, userId: string, revocation: string) {
+    return this.emit({
+      type: "space.remove_member",
+      eventId: ulid(),
+      spaceId,
+      userId,
+      revocation,
+    } as AnyEvent);
+  }
+  spaceBanUser(spaceId: string, userId: string, reason?: string) {
+    return this.emit({
+      type: "space.ban_user",
+      eventId: ulid(),
+      spaceId,
+      userId,
+      reason,
+    } as AnyEvent);
+  }
+  threadCreate(
+    threadId: string,
+    data?: {
+      spaceId?: string;
+      name?: Partial<import("./types/components").CompName>;
+      description?: Partial<import("./types/components").CompDescription>;
+    },
+  ) {
+    return this.emit({
+      type: "thread.create",
+      eventId: ulid(),
+      threadId,
+      ...data,
+    } as AnyEvent);
+  }
+  threadPinMessage(threadId: string, messageId: string) {
+    return this.emit({
+      type: "thread.pin_message",
+      eventId: ulid(),
+      threadId,
+      messageId,
+    } as AnyEvent);
+  }
+  pageCreate(
+    pageId: string,
+    data?: {
+      name?: Partial<import("./types/components").CompName>;
+      description?: Partial<import("./types/components").CompDescription>;
+    },
+  ) {
+    return this.emit({
+      type: "page.create",
+      eventId: ulid(),
+      pageId,
+      ...data,
+    } as AnyEvent);
+  }
+  threadMarkRead(
+    userId: string,
+    threadId: string,
+    timestamp: EdgeLastRead["timestamp"],
+  ) {
+    return this.emit({
+      type: "thread.mark_read",
+      eventId: ulid(),
+      userId,
+      threadId,
+      timestamp,
+    } as AnyEvent);
+  }
+  messagePost(
+    messageId: string,
+    threadId: string,
+    authorUserId: string,
+    text?: Partial<ComponentData<"text_content">>,
+    replyToMessageId?: string,
+    embedEntityId?: string,
+  ) {
+    return this.emit({
+      type: "message.post",
+      eventId: ulid(),
+      messageId,
+      threadId,
+      authorUserId,
+      text,
+      replyToMessageId,
+      embedEntityId,
+    } as AnyEvent);
+  }
+  messageEdit(
+    messageId: string,
+    text?: Partial<ComponentData<"text_content">>,
+  ) {
+    return this.emit({
+      type: "message.edit",
+      eventId: ulid(),
+      messageId,
+      text,
+    } as AnyEvent);
+  }
+  messageDelete(messageId: string) {
+    return this.emit({
+      type: "message.delete",
+      eventId: ulid(),
+      messageId,
+    } as AnyEvent);
+  }
+  messageReact(
+    messageId: string,
+    userId: string,
+    reaction: EdgeReaction["reaction"],
+  ) {
+    return this.emit({
+      type: "message.react",
+      eventId: ulid(),
+      messageId,
+      userId,
+      reaction,
+    } as AnyEvent);
+  }
+  messageUnreact(
+    messageId: string,
+    userId: string,
+    reaction: EdgeReaction["reaction"],
+  ) {
+    return this.emit({
+      type: "message.unreact",
+      eventId: ulid(),
+      messageId,
+      userId,
+      reaction,
+    } as AnyEvent);
+  }
+  messageReorder(messageId: string, afterMessageId: string | null) {
+    return this.emit({
+      type: "message.reorder",
+      eventId: ulid(),
+      messageId,
+      afterMessageId,
+    } as AnyEvent);
+  }
+  uploadStart(
+    uploadId: string,
+    mediaType?: import("./types/components").CompUpload["media_type"],
+    attachToMessageId?: string,
+  ) {
+    return this.emit({
+      type: "upload.start",
+      eventId: ulid(),
+      uploadId,
+      mediaType,
+      attachToMessageId,
+    } as AnyEvent);
+  }
+  uploadComplete(
+    uploadId: string,
+    url: import("./types/components").CompUpload["url"],
+  ) {
+    return this.emit({
+      type: "upload.complete",
+      eventId: ulid(),
+      uploadId,
+      url,
+    } as AnyEvent);
+  }
+  uploadFail(uploadId: string, error: string) {
+    return this.emit({
+      type: "upload.fail",
+      eventId: ulid(),
+      uploadId,
+      error,
+    } as AnyEvent);
+  }
+  entitySetAvatar(entityId: string, imageId: string) {
+    return this.emit({
+      type: "entity.set_avatar",
+      eventId: ulid(),
+      entityId,
+      imageId,
+    } as AnyEvent);
   }
 }

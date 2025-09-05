@@ -20,12 +20,19 @@ type ForwardQueryMessage = {
   fromTabId: string;
   sql: string;
 };
+type ForwardAppEventMessage = {
+  type: "FORWARD_APP_EVENT";
+  requestId: string;
+  fromTabId: string;
+  event: import("../lib/db/types/events").AnyEvent;
+};
 
 type DemoteMessage = { type: "DEMOTE"; tabId: string };
 type InboundMessage =
   | InitMessage
   | PromoteMessage
   | ForwardQueryMessage
+  | ForwardAppEventMessage
   | DemoteMessage;
 
 type WorkerReady = { type: "WORKER_READY"; tabId: string | null };
@@ -38,6 +45,18 @@ type QueryResult = {
 };
 type QueryError = {
   type: "QUERY_ERROR";
+  requestId: string;
+  fromTabId?: string;
+  error: string;
+};
+type AppEventResponse = {
+  type: "APP_EVENT_RESPONSE";
+  requestId: string;
+  fromTabId: string;
+  result: unknown;
+};
+type AppEventError = {
+  type: "APP_EVENT_ERROR";
   requestId: string;
   fromTabId?: string;
   error: string;
@@ -170,5 +189,27 @@ ctx.onmessage = (e: MessageEvent<InboundMessage>) => {
           error: message,
         } as QueryError);
       });
+  }
+  if (m.type === "FORWARD_APP_EVENT") {
+    const { requestId, fromTabId, event } = m;
+    // Placeholder: application of events will be implemented later
+    // For now, acknowledge receipt and echo back the event type
+    try {
+      const result = { applied: true, type: (event as { type?: string }).type };
+      ctx.postMessage({
+        type: "APP_EVENT_RESPONSE",
+        requestId,
+        fromTabId,
+        result,
+      } as AppEventResponse);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      ctx.postMessage({
+        type: "APP_EVENT_ERROR",
+        requestId,
+        fromTabId,
+        error: message,
+      } as AppEventError);
+    }
   }
 };

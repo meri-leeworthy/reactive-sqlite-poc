@@ -26,12 +26,27 @@ export type Query = {
   params?: unknown;
 };
 
+// Application-level event dispatching
+export type AppEvent = {
+  type: "APP_EVENT";
+  tabId: string;
+  requestId: string;
+  event: import("../db/types/events").AnyEvent;
+};
+
 export type ForwardQuery = {
   type: "FORWARD_QUERY";
   requestId: string;
   fromTabId: string;
   sql: string;
   params?: unknown;
+};
+
+export type ForwardAppEvent = {
+  type: "FORWARD_APP_EVENT";
+  requestId: string;
+  fromTabId: string;
+  event: import("../db/types/events").AnyEvent;
 };
 
 export type QueryResponse = {
@@ -47,10 +62,24 @@ export type QueryError = {
   fromTabId?: string;
 };
 
+export type AppEventResponse = {
+  type: "APP_EVENT_RESPONSE";
+  requestId: string;
+  result: unknown;
+};
+
+export type AppEventError = {
+  type: "APP_EVENT_ERROR";
+  requestId: string;
+  error: string;
+  fromTabId?: string;
+};
+
 export type ToSharedWorker =
   | RegisterTab
   | UnregisterTab
   | Query
+  | AppEvent
   | HeartbeatPong
   | LockHeld
   | LockReleased
@@ -61,7 +90,10 @@ export type FromSharedWorker =
   | Demote
   | DbOpened
   | ForwardQuery
+  | ForwardAppEvent
   | QueryResponse
   | QueryError
+  | AppEventResponse
+  | AppEventError
   | Heartbeat
   | BaseMsg;

@@ -37,6 +37,18 @@ interface ForwardQueryMsg extends BaseMsg {
   sql: string;
   params?: unknown;
 }
+interface AppEventMsg extends BaseMsg {
+  type: "APP_EVENT";
+  tabId: TabId;
+  requestId: string;
+  event: import("../lib/db/types/events").AnyEvent;
+}
+interface ForwardAppEventMsg extends BaseMsg {
+  type: "FORWARD_APP_EVENT";
+  requestId: string;
+  fromTabId: TabId;
+  event: import("../lib/db/types/events").AnyEvent;
+}
 interface QueryResultMsg extends BaseMsg {
   type: "QUERY_RESULT";
   requestId: string;
@@ -71,6 +83,7 @@ type IncomingMsg =
   | LockHeldMsg
   | LockReleasedMsg
   | QueryMsg
+  | AppEventMsg
   | QueryResultMsg
   | QueryErrorMsg
   | DBOpenedMsg
@@ -181,6 +194,25 @@ function forwardQueryToActive(pq: PendingQuery) {
   };
 
   metrics.forwardedQueries++;
+  activeConn.port.postMessage(msg);
+}
+
+function forwardAppEventToActive(
+  requestId: string,
+  fromTabId: TabId,
+  event: import("../lib/db/types/events").AnyEvent,
+) {
+  if (!activeTabId) {
+    throw new Error("no-active");
+  }
+  const activeConn = connections.get(activeTabId);
+  if (!activeConn) throw new Error("active-not-connected");
+  const msg: ForwardAppEventMsg = {
+    type: "FORWARD_APP_EVENT",
+    requestId,
+    fromTabId,
+    event,
+  };
   activeConn.port.postMessage(msg);
 }
 
@@ -424,6 +456,23 @@ onconnect = (e: MessageEvent) => {
         enqueueQuery(qm.tabId, qm.requestId, qm.sql, qm.params);
         break;
       }
+      case "APP_EVENT": {
+        const em = m as AppEventMsg;
+        try {
+          forwardAppEventToActive(em.requestId, em.tabId, em.event);
+        } catch (err) {
+          const conn = connections.get(em.tabId);
+          if (conn) {
+            conn.port.postMessage({
+              type: "APP_EVENT_ERROR",
+              requestId: em.requestId,
+              error: String(err),
+              fromTabId: em.tabId,
+            } as BaseMsg);
+          }
+        }
+        break;
+      }
       case "QUERY_RESULT": {
         const r = m as QueryResultMsg;
         log("debug", "received_query_result", {
@@ -449,6 +498,31 @@ onconnect = (e: MessageEvent) => {
           });
         }
         pendingQueries.delete(r.requestId);
+        break;
+      }
+      case "APP_EVENT_RESPONSE": {
+        // Forwarded back by dedicated worker to the originating tab
+        const r = m as unknown as {
+          type: "APP_EVENT_RESPONSE";
+          requestId: string;
+          fromTabId: TabId;
+          result: unknown;
+        };
+        const origin = connections.get(r.fromTabId);
+        if (origin) origin.port.postMessage(r as BaseMsg);
+        break;
+      }
+      case "APP_EVENT_ERROR": {
+        const err = m as unknown as {
+          type: "APP_EVENT_ERROR";
+          requestId: string;
+          fromTabId?: TabId;
+          error: string;
+        };
+        const origin =
+          (err.fromTabId && connections.get(err.fromTabId)) ||
+          (localTabId && connections.get(localTabId));
+        if (origin) origin.port.postMessage(err as BaseMsg);
         break;
       }
       case "QUERY_ERROR": {

@@ -3,11 +3,13 @@ import type {
   FromSharedWorker,
   PromoteToActive,
   ForwardQuery,
+  ForwardAppEvent,
   QueryResponse,
   QueryError,
   Heartbeat,
   HeartbeatPong,
 } from "./messages";
+import type { AnyEvent } from "../db/types/events";
 
 export type WorkerKind = "shared" | "none";
 
@@ -140,6 +142,10 @@ export class WorkerManager {
     if ((msg as ForwardQuery).type === "FORWARD_QUERY") {
       this.dedicatedWorker?.postMessage(msg);
     }
+    // Forward app events
+    if ((msg as ForwardAppEvent).type === "FORWARD_APP_EVENT") {
+      this.dedicatedWorker?.postMessage(msg);
+    }
     // Reply to heartbeat from coordinator
     if ((msg as Heartbeat).type === "HEARTBEAT") {
       this.sharedWorker?.port.postMessage({
@@ -160,6 +166,19 @@ export class WorkerManager {
       tabId: this.tabId,
       requestId,
       sql,
+    } as ToSharedWorker);
+  }
+
+  sendAppEvent(event: AnyEvent, requestId: string): void {
+    if (!this.sharedWorker) {
+      console.warn("WorkerManager: SharedWorker not available");
+      return;
+    }
+    this.sharedWorker.port.postMessage({
+      type: "APP_EVENT",
+      tabId: this.tabId,
+      requestId,
+      event,
     } as ToSharedWorker);
   }
 
