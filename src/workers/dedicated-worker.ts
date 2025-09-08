@@ -4,6 +4,7 @@ import {
   executeQuery,
   isDatabaseReady,
 } from "./setup-sqlite";
+import { ingestEvents } from "./ingest-events";
 
 let tabId: string | null = null;
 let dbInitStarted = false;
@@ -104,7 +105,7 @@ async function flushPending() {
   }
 }
 
-ctx.onmessage = (e: MessageEvent<InboundMessage>) => {
+ctx.onmessage = async (e: MessageEvent<InboundMessage>) => {
   const m = e.data;
   if (m.type === "INIT") {
     tabId = m.tabId;
@@ -192,10 +193,12 @@ ctx.onmessage = (e: MessageEvent<InboundMessage>) => {
   }
   if (m.type === "FORWARD_APP_EVENT") {
     const { requestId, fromTabId, event } = m;
-    // Placeholder: application of events will be implemented later
-    // For now, acknowledge receipt and echo back the event type
+    // Ensure DB is ready before attempting to ingest
     try {
-      const result = { applied: true, type: (event as { type?: string }).type };
+      if (!isDatabaseReady()) {
+        await ensureDbInitialized();
+      }
+      const result = await ingestEvents(event);
       ctx.postMessage({
         type: "APP_EVENT_RESPONSE",
         requestId,
