@@ -1,9 +1,16 @@
 import * as schema from "./schema";
-import type { AnyEvent, ComponentData, EdgePayload } from "./types/events";
-import type { ComponentName } from "./types/components";
-import type { EntityLabel } from "./types/entities";
-import type { EdgeMember, EdgeReaction, EdgeLastRead } from "./types/edges";
+import type { AnyEvent } from "./types/events";
+import type {
+  CompConfig,
+  CompDescription,
+  CompName,
+  CompProfile,
+  CompTextContent,
+  CompUpload,
+} from "./types/components";
+import type { EdgeMember, EdgeReaction, EdgeBan } from "./types/edges";
 import { ulid } from "ulid";
+import type { EntityId } from "./types/entities";
 
 export class LeafClient {
   active: string | null = null;
@@ -178,122 +185,122 @@ export class LeafClient {
     }
   }
 
-  // ===== Core events helpers =====
-  entityCreate(entityId: string, label: EntityLabel) {
-    return this.emit({
-      type: "entity.create",
-      eventId: ulid(),
-      entityId,
-      label,
-    });
-  }
-  entityDelete(entityId: string) {
-    return this.emit({
-      type: "entity.delete",
-      eventId: ulid(),
-      entityId,
-    });
-  }
-  entitySetLabel(entityId: string, label: EntityLabel) {
-    return this.emit({
-      type: "entity.set_label",
-      eventId: ulid(),
-      entityId,
-      label,
-    });
-  }
-  componentUpsert<K extends ComponentName>(
-    entityId: string,
-    component: K,
-    data: Partial<import("./types/components").ComponentMap[K]> &
-      Partial<import("./types/components").BaseComponent>,
-  ) {
-    // Strip base fields if provided
-    const tmp = {
-      ...(data as Partial<import("./types/components").ComponentMap[K]> &
-        Partial<import("./types/components").BaseComponent>),
-    };
-    delete (tmp as Partial<import("./types/components").BaseComponent>).entity;
-    delete (tmp as Partial<import("./types/components").BaseComponent>)
-      .created_at;
-    delete (tmp as Partial<import("./types/components").BaseComponent>)
-      .updated_at;
-    const rest = tmp as Partial<ComponentData<K>>;
-    return this.emit({
-      type: "component.upsert",
-      eventId: ulid(),
-      entityId,
-      component,
-      data: rest,
-    });
-  }
-  componentRemove<K extends ComponentName>(entityId: string, component: K) {
-    return this.emit({
-      type: "component.remove",
-      eventId: ulid(),
-      entityId,
-      component,
-    });
-  }
-  edgeAdd<K extends import("./types/edges").EdgeLabel>(
-    entityId: string,
-    label: K,
-    head: string,
-    tail: string,
-    payload: EdgePayload<K>,
-  ) {
-    return this.emit({
-      type: "edge.add",
-      eventId: ulid(),
-      entityId,
-      label,
-      head,
-      tail,
-      payload,
-    });
-  }
-  edgeRemove<K extends import("./types/edges").EdgeLabel>(
-    entityId: string,
-    label: K,
-    head: string,
-    tail: string,
-  ) {
-    return this.emit({
-      type: "edge.remove",
-      eventId: ulid(),
-      entityId,
-      label,
-      head,
-      tail,
-    });
-  }
-  edgeUpdate<K extends "reaction" | "last_read" | "member">(
-    entityId: string,
-    label: K,
-    head: string,
-    tail: string,
-    payload: EdgePayload<K>,
-  ) {
-    return this.emit({
-      type: "edge.update",
-      eventId: ulid(),
-      entityId,
-      label,
-      head,
-      tail,
-      payload,
-    });
-  }
+  // // ===== Core events helpers =====
+  // entityCreate(entityId: string, label: EntityLabel) {
+  //   return this.emit({
+  //     type: "entity.create",
+  //     eventId: ulid(),
+  //     entityId,
+  //     label,
+  //   });
+  // }
+  // entityDelete(entityId: string) {
+  //   return this.emit({
+  //     type: "entity.delete",
+  //     eventId: ulid(),
+  //     entityId,
+  //   });
+  // }
+  // entitySetLabel(entityId: string, label: EntityLabel) {
+  //   return this.emit({
+  //     type: "entity.set_label",
+  //     eventId: ulid(),
+  //     entityId,
+  //     label,
+  //   });
+  // }
+  // componentUpsert<K extends ComponentName>(
+  //   entityId: string,
+  //   component: K,
+  //   data: Partial<import("./types/components").ComponentMap[K]> &
+  //     Partial<import("./types/components").BaseComponent>,
+  // ) {
+  //   // Strip base fields if provided
+  //   const tmp = {
+  //     ...(data as Partial<import("./types/components").ComponentMap[K]> &
+  //       Partial<import("./types/components").BaseComponent>),
+  //   };
+  //   delete (tmp as Partial<import("./types/components").BaseComponent>).entity;
+  //   delete (tmp as Partial<import("./types/components").BaseComponent>)
+  //     .created_at;
+  //   delete (tmp as Partial<import("./types/components").BaseComponent>)
+  //     .updated_at;
+  //   const rest = tmp as Partial<ComponentData<K>>;
+  //   return this.emit({
+  //     type: "component.upsert",
+  //     eventId: ulid(),
+  //     entityId,
+  //     component,
+  //     data: rest,
+  //   });
+  // }
+  // componentRemove<K extends ComponentName>(entityId: string, component: K) {
+  //   return this.emit({
+  //     type: "component.remove",
+  //     eventId: ulid(),
+  //     entityId,
+  //     component,
+  //   });
+  // }
+  // edgeAdd<K extends import("./types/edges").EdgeLabel>(
+  //   entityId: string,
+  //   label: K,
+  //   head: string,
+  //   tail: string,
+  //   payload: EdgePayload<K>,
+  // ) {
+  //   return this.emit({
+  //     type: "edge.add",
+  //     eventId: ulid(),
+  //     entityId,
+  //     label,
+  //     head,
+  //     tail,
+  //     payload,
+  //   });
+  // }
+  // edgeRemove<K extends import("./types/edges").EdgeLabel>(
+  //   entityId: string,
+  //   label: K,
+  //   head: string,
+  //   tail: string,
+  // ) {
+  //   return this.emit({
+  //     type: "edge.remove",
+  //     eventId: ulid(),
+  //     entityId,
+  //     label,
+  //     head,
+  //     tail,
+  //   });
+  // }
+  // edgeUpdate<K extends "reaction" | "last_read" | "member">(
+  //   entityId: string,
+  //   label: K,
+  //   head: string,
+  //   tail: string,
+  //   payload: EdgePayload<K>,
+  // ) {
+  //   return this.emit({
+  //     type: "edge.update",
+  //     eventId: ulid(),
+  //     entityId,
+  //     label,
+  //     head,
+  //     tail,
+  //     payload,
+  //   });
+  // }
 
   // ===== Domain helpers (examples) =====
   userCreate(
-    userId: string,
+    userId: EntityId,
     data?: {
-      name?: Partial<import("./types/components").CompName>;
-      description?: Partial<import("./types/components").CompDescription>;
-      profile?: Partial<import("./types/components").CompProfile>;
-      config?: Partial<import("./types/components").CompConfig>;
-      avatarImageId?: string;
+      name?: CompName;
+      description?: CompDescription;
+      profile?: CompProfile;
+      config?: CompConfig;
+      avatarImageId?: EntityId;
     },
   ) {
     return this.emit({
@@ -301,22 +308,22 @@ export class LeafClient {
       eventId: ulid(),
       userId,
       ...data,
-    } as AnyEvent);
+    });
   }
-  userSubscribeThread(userId: string, threadId: string) {
+  userSubscribeThread(userId: EntityId, threadId: EntityId) {
     return this.emit({
       type: "user.subscribe_thread",
       eventId: ulid(),
       userId,
       threadId,
-    } as AnyEvent);
+    });
   }
   spaceCreate(
-    spaceId: string,
+    spaceId: EntityId,
     data?: {
-      name?: Partial<import("./types/components").CompName>;
-      description?: Partial<import("./types/components").CompDescription>;
-      avatarImageId?: string;
+      name?: CompName;
+      description?: CompDescription;
+      avatarImageId?: EntityId;
     },
   ) {
     return this.emit({
@@ -324,41 +331,47 @@ export class LeafClient {
       eventId: ulid(),
       spaceId,
       ...data,
-    } as AnyEvent);
+    });
   }
-  spaceAddMember(spaceId: string, userId: string, member: EdgeMember) {
+  spaceAddMember(spaceId: EntityId, userId: EntityId, member: EdgeMember) {
     return this.emit({
       type: "space.add_member",
       eventId: ulid(),
       spaceId,
       userId,
       member,
-    } as AnyEvent);
+    });
   }
-  spaceRemoveMember(spaceId: string, userId: string, revocation: string) {
+  spaceRemoveMember(spaceId: EntityId, userId: EntityId, revocation: string) {
     return this.emit({
       type: "space.remove_member",
       eventId: ulid(),
       spaceId,
       userId,
       revocation,
-    } as AnyEvent);
+    });
   }
-  spaceBanUser(spaceId: string, userId: string, reason?: string) {
+  spaceBanUser(
+    spaceId: EntityId,
+    userId: EntityId,
+    reason?: EdgeBan["reason"],
+    bannedBy?: EdgeBan["banned_by"],
+  ) {
     return this.emit({
       type: "space.ban_user",
       eventId: ulid(),
       spaceId,
       userId,
       reason,
-    } as AnyEvent);
+      bannedBy,
+    });
   }
   threadCreate(
-    threadId: string,
+    threadId: EntityId,
     data?: {
-      spaceId?: string;
-      name?: Partial<import("./types/components").CompName>;
-      description?: Partial<import("./types/components").CompDescription>;
+      spaceId?: EntityId;
+      name?: CompName;
+      description?: CompDescription;
     },
   ) {
     return this.emit({
@@ -366,21 +379,21 @@ export class LeafClient {
       eventId: ulid(),
       threadId,
       ...data,
-    } as AnyEvent);
+    });
   }
-  threadPinMessage(threadId: string, messageId: string) {
+  threadPinMessage(threadId: EntityId, messageId: EntityId) {
     return this.emit({
       type: "thread.pin_message",
       eventId: ulid(),
       threadId,
       messageId,
-    } as AnyEvent);
+    });
   }
   pageCreate(
-    pageId: string,
+    pageId: EntityId,
     data?: {
-      name?: Partial<import("./types/components").CompName>;
-      description?: Partial<import("./types/components").CompDescription>;
+      name?: CompName;
+      description?: CompDescription;
     },
   ) {
     return this.emit({
@@ -388,28 +401,24 @@ export class LeafClient {
       eventId: ulid(),
       pageId,
       ...data,
-    } as AnyEvent);
+    });
   }
-  threadMarkRead(
-    userId: string,
-    threadId: string,
-    timestamp: EdgeLastRead["timestamp"],
-  ) {
+  threadMarkRead(userId: EntityId, threadId: EntityId, timestamp: number) {
     return this.emit({
       type: "thread.mark_read",
       eventId: ulid(),
       userId,
       threadId,
       timestamp,
-    } as AnyEvent);
+    });
   }
   messagePost(
-    messageId: string,
-    threadId: string,
-    authorUserId: string,
-    text?: Partial<ComponentData<"text_content">>,
-    replyToMessageId?: string,
-    embedEntityId?: string,
+    messageId: EntityId,
+    threadId: EntityId,
+    authorUserId: EntityId,
+    text?: CompTextContent,
+    replyToMessageId?: EntityId,
+    embeds?: EntityId[],
   ) {
     return this.emit({
       type: "message.post",
@@ -419,30 +428,27 @@ export class LeafClient {
       authorUserId,
       text,
       replyToMessageId,
-      embedEntityId,
-    } as AnyEvent);
+      embeds,
+    });
   }
-  messageEdit(
-    messageId: string,
-    text?: Partial<ComponentData<"text_content">>,
-  ) {
+  messageEdit(messageId: EntityId, text?: CompTextContent) {
     return this.emit({
       type: "message.edit",
       eventId: ulid(),
       messageId,
       text,
-    } as AnyEvent);
+    });
   }
-  messageDelete(messageId: string) {
+  messageDelete(messageId: EntityId) {
     return this.emit({
       type: "message.delete",
       eventId: ulid(),
       messageId,
-    } as AnyEvent);
+    });
   }
   messageReact(
-    messageId: string,
-    userId: string,
+    messageId: EntityId,
+    userId: EntityId,
     reaction: EdgeReaction["reaction"],
   ) {
     return this.emit({
@@ -451,11 +457,11 @@ export class LeafClient {
       messageId,
       userId,
       reaction,
-    } as AnyEvent);
+    });
   }
   messageUnreact(
-    messageId: string,
-    userId: string,
+    messageId: EntityId,
+    userId: EntityId,
     reaction: EdgeReaction["reaction"],
   ) {
     return this.emit({
@@ -464,20 +470,20 @@ export class LeafClient {
       messageId,
       userId,
       reaction,
-    } as AnyEvent);
+    });
   }
-  messageReorder(messageId: string, afterMessageId: string | null) {
+  messageReorder(messageId: EntityId, afterMessageId: EntityId) {
     return this.emit({
       type: "message.reorder",
       eventId: ulid(),
       messageId,
       afterMessageId,
-    } as AnyEvent);
+    });
   }
   uploadStart(
-    uploadId: string,
-    mediaType?: import("./types/components").CompUpload["media_type"],
-    attachToMessageId?: string,
+    uploadId: EntityId,
+    mediaType: CompUpload["media_type"],
+    attachToMessageId?: EntityId,
   ) {
     return this.emit({
       type: "upload.start",
@@ -485,33 +491,32 @@ export class LeafClient {
       uploadId,
       mediaType,
       attachToMessageId,
-    } as AnyEvent);
+    });
   }
   uploadComplete(
-    uploadId: string,
-    url: import("./types/components").CompUpload["url"],
+    uploadId: EntityId,
+    mediaType: CompUpload["media_type"],
+    url: CompUpload["url"],
   ) {
     return this.emit({
       type: "upload.complete",
       eventId: ulid(),
+      mediaType,
       uploadId,
       url,
-    } as AnyEvent);
+    });
   }
-  uploadFail(uploadId: string, error: string) {
+  uploadFail(
+    uploadId: EntityId,
+    mediaType: CompUpload["media_type"],
+    error: string,
+  ) {
     return this.emit({
       type: "upload.fail",
       eventId: ulid(),
+      mediaType,
       uploadId,
       error,
-    } as AnyEvent);
-  }
-  entitySetAvatar(entityId: string, imageId: string) {
-    return this.emit({
-      type: "entity.set_avatar",
-      eventId: ulid(),
-      entityId,
-      imageId,
-    } as AnyEvent);
+    });
   }
 }

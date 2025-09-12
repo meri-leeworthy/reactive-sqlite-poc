@@ -1,5 +1,7 @@
 // Auto-generated from * tables in schema.ts to mirror component shapes
 
+import type { EntityId } from "./entities";
+
 export type ComponentName =
   | "profile"
   | "config"
@@ -14,7 +16,7 @@ export type ComponentName =
   | "url";
 
 export interface BaseComponent {
-  entity: string;
+  entity: EntityId;
   created_at: number;
   updated_at: number;
 }
@@ -39,10 +41,12 @@ export interface CompUpload extends BaseComponent {
   media_type: UploadType | null;
   status: UploadStatus | null;
   url: string | null;
-  attach_to_message_id: Uint8Array | null;
 }
 
-export type CompUserAccessTimes = BaseComponent;
+export interface CompUserAccessTimes extends BaseComponent {
+  user_created_at: number | null;
+  user_updated_at: number | null;
+}
 
 export interface CompTextContent extends BaseComponent {
   text: string | null;
@@ -99,3 +103,9 @@ export type ComponentsRecord<
 } & {
   [K in TOptional[number]]?: ComponentMap[K];
 };
+
+// type to get only the non-base fields of a component
+export type ComponentNonBaseFields<TComponentName extends ComponentName> = Pick<
+  ComponentMap[TComponentName],
+  Exclude<keyof ComponentMap[TComponentName], keyof BaseComponent>
+>;

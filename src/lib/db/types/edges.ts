@@ -24,8 +24,9 @@ export interface EdgeReaction {
   reaction: string;
 }
 
-export interface EdgeLastRead {
-  timestamp: number;
+export interface EdgeBan {
+  reason: string;
+  banned_by: EntityId;
 }
 
 export interface EdgeMember {
@@ -33,10 +34,10 @@ export interface EdgeMember {
 }
 
 export type EdgesMap = {
-  [K in Exclude<EdgeLabel, "reaction" | "last_read" | "member">]: null;
+  [K in Exclude<EdgeLabel, "reaction" | "member" | "ban">]: null;
 } & {
   reaction: EdgeReaction;
-  last_read: EdgeLastRead;
+  ban: EdgeBan;
   member: EdgeMember;
 };
 

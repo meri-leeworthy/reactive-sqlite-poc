@@ -7,7 +7,7 @@ export const pragmaForeignKeys = `PRAGMA foreign_keys = ON;`;
 export const createEntitiesTable = `
 CREATE TABLE IF NOT EXISTS entities (
   ulid BLOB PRIMARY KEY, 
-  label TEXT CHECK(label IN ('notification', 'embed', 'device', 'user', 'timeline', 'message', 'task', 'space')), 
+  label TEXT CHECK(label IN ('notification', 'media', 'device', 'user', 'timeline', 'message', 'task', 'space')), 
   created_at INTEGER
 ) STRICT;`;
 export const createEntitiesIndex = `CREATE INDEX IF NOT EXISTS idx_entities_label ON entities(label);`;
@@ -16,7 +16,8 @@ export const createEventsTable = `CREATE TABLE IF NOT EXISTS events (
   event_ulid BLOB PRIMARY KEY,
   entity_ulid BLOB REFERENCES entities(ulid) ON DELETE CASCADE,
   payload BLOB,
-  created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+  created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+  applied INTEGER DEFAULT 0
 ) STRICT;`;
 export const createEventsIndex = `CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);`;
 export const createEventsIndexEntityCreated = `CREATE INDEX IF NOT EXISTS idx_events_entity_created ON events(entity_ulid, created_at, event_ulid);`;
@@ -44,9 +45,9 @@ CREATE TABLE IF NOT EXISTS comp_profile (
     entity TEXT PRIMARY KEY REFERENCES entities(ulid) ON DELETE CASCADE,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
-    blueskyHandle TEXT,
-    bannerUrl TEXT,
-    joinedDate INTEGER
+    bluesky_handle TEXT,
+    banner_url TEXT,
+    joined_date INTEGER
 ) STRICT;
 `;
 export const createCompProfileIndex = `CREATE INDEX IF NOT EXISTS idx_profile_handle ON comp_profile(blueskyHandle);`;
@@ -85,7 +86,9 @@ export const createCompUserAccessTimesTable = `
 CREATE TABLE IF NOT EXISTS comp_user_access_times (
     entity TEXT PRIMARY KEY REFERENCES entities(ulid) ON DELETE CASCADE,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    user_created_at INTEGER NOT NULL,
+    user_updated_at INTEGER NOT NULL
 ) STRICT;
 `;
 export const createCompUserAccessTimesCreatedIndex = `CREATE INDEX IF NOT EXISTS idx_user_access_times ON comp_user_access_times(created_at);`;

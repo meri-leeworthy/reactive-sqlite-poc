@@ -7,7 +7,7 @@ export type EntityId = string; // ULID
 
 export type EntityLabel =
   | "notification"
-  | "embed"
+  | "media"
   | "device"
   | "user"
   | "timeline"
